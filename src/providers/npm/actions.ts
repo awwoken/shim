@@ -122,9 +122,9 @@ export const upgradeNpmTools = async ({
       config,
       packageSpec: `${tool.packageName}@${latest.version}`,
       options: {
-        runtime: tool.runtime.version,
+        runtime: tool.installPolicy?.runtimeOverride,
         force: true,
-        ignoreScripts: false,
+        ignoreScripts: tool.installPolicy?.ignoreScripts ?? false,
         replaceToolId: tool.id,
       },
       reporter,

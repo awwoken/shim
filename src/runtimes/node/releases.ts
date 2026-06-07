@@ -91,13 +91,33 @@ const selectOverrideVersion = (
   return normalized;
 };
 
+const assertVersionSatisfiesEngines = (
+  version: string,
+  enginesNode: string | undefined,
+): void => {
+  if (enginesNode === undefined || enginesNode === "") {
+    return;
+  }
+
+  if (semver.satisfies(version, enginesNode)) {
+    return;
+  }
+
+  throw new AppError(
+    `Selected Node.js ${version} does not satisfy package requirement ${enginesNode}`,
+  );
+};
+
 export const selectNodeVersion = (
   releases: NodeRelease[],
   enginesNode: string | undefined,
   override: string | undefined,
 ): string => {
   if (override !== undefined) {
-    return selectOverrideVersion(releases, override);
+    const version = selectOverrideVersion(releases, override);
+    assertVersionSatisfiesEngines(version, enginesNode);
+
+    return version;
   }
 
   if (enginesNode === undefined || enginesNode === "") {

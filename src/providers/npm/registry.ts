@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import type { RegistryTool, ShimMetadata } from "@/core/models";
+import type { InstallPolicy, RegistryTool, ShimMetadata } from "@/core/models";
 import { getToolId } from "@/core/registry";
 import { NODE_RUNTIME_ID } from "@/runtimes/node/constants";
 import type { ShimPaths } from "@/support/paths";
@@ -17,6 +17,7 @@ type CreateInitialMetadataInput = {
   packageSpec: string;
   nodeVersion: string;
   enginesNode: string | undefined;
+  installPolicy: InstallPolicy;
 };
 
 export const createInitialMetadata = ({
@@ -25,12 +26,14 @@ export const createInitialMetadata = ({
   packageSpec,
   nodeVersion,
   enginesNode,
+  installPolicy,
 }: CreateInitialMetadataInput): ShimMetadata => ({
   provider: NPM_PROVIDER_ID,
   packageName,
   packageVersion,
   packageSpec,
   runtime: { kind: NODE_RUNTIME_ID, version: nodeVersion },
+  providerData: { installPolicy },
   runtimeData: { enginesNode },
   installedAt: new Date().toISOString(),
   bins: {},
@@ -44,6 +47,7 @@ export type CreateNpmRegistryToolInput = {
   nodeVersion: string;
   installedAt: string;
   binNames: string[];
+  installPolicy: InstallPolicy;
 };
 
 export const createNpmRegistryTool = ({
@@ -54,6 +58,7 @@ export const createNpmRegistryTool = ({
   nodeVersion,
   installedAt,
   binNames,
+  installPolicy,
 }: CreateNpmRegistryToolInput): RegistryTool => {
   const toolPath = npmToolPath(paths, packageName, packageVersion);
 
@@ -68,5 +73,6 @@ export const createNpmRegistryTool = ({
     toolPath,
     metadataPath: join(toolPath, "shim.json"),
     bins: binNames,
+    installPolicy,
   };
 };

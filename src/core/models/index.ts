@@ -35,6 +35,11 @@ export type RegistryBin = {
   shimPath: string;
 };
 
+export type InstallPolicy = {
+  ignoreScripts: boolean;
+  runtimeOverride?: string;
+};
+
 export type RegistryTool = {
   id: ToolId;
   provider: ProviderId;
@@ -46,6 +51,7 @@ export type RegistryTool = {
   toolPath: string;
   metadataPath: string;
   bins: string[];
+  installPolicy?: InstallPolicy;
 };
 
 export type Registry = {

@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import type { ShimConfig } from "@/core/config";
 import { ensureShimHome } from "@/core/home";
-import type { InstallOptions, RegistryTool } from "@/core/models";
+import type {
+  InstallOptions,
+  InstallPolicy,
+  RegistryTool,
+} from "@/core/models";
 import {
   checkBinConflicts,
   loadRegistry,
@@ -127,6 +131,10 @@ export const installNpmPackage = async ({
   await removePath(stagePath);
   await ensureDir(stagePrefixPath);
 
+  const installPolicy: InstallPolicy = {
+    ignoreScripts: options.ignoreScripts,
+    runtimeOverride: options.runtime,
+  };
   const previousBins = existingTool === undefined ? [] : existingTool.bins;
   let stageWasPromoted = false;
   let shimBackups: Awaited<ReturnType<typeof backupNpmShims>> = [];
@@ -170,6 +178,7 @@ export const installNpmPackage = async ({
       packageSpec,
       nodeVersion: targetNode,
       enginesNode: metadata.enginesNode,
+      installPolicy,
     });
 
     await writeJsonAtomic(join(stagePath, "shim.json"), initialMetadata);
@@ -218,6 +227,7 @@ export const installNpmPackage = async ({
       nodeVersion: targetNode,
       installedAt: initialMetadata.installedAt,
       binNames,
+      installPolicy,
     });
 
     await removeStaleNpmShims({

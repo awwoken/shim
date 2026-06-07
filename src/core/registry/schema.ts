@@ -15,6 +15,11 @@ const runtimeRefSchema = v.strictObject({
   version: v.string(),
 });
 
+const installPolicySchema = v.strictObject({
+  ignoreScripts: v.boolean(),
+  runtimeOverride: v.optional(v.string()),
+});
+
 const registryToolSchema = v.strictObject({
   id: toolIdSchema,
   provider: v.string(),
@@ -26,6 +31,7 @@ const registryToolSchema = v.strictObject({
   toolPath: v.string(),
   metadataPath: v.string(),
   bins: v.array(v.string()),
+  installPolicy: v.optional(installPolicySchema),
 });
 
 const registryBinSchema = v.strictObject({
