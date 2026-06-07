@@ -9,7 +9,7 @@ import {
   selectLatestLts,
   selectNodeVersion,
 } from "@/runtimes/node/releases";
-import { pathExists } from "@/support/fs";
+import { pathExists, removePath } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 import { runCommand } from "@/support/process";
 export type { NodeRelease } from "@/runtimes/node/types";
@@ -46,6 +46,11 @@ export const ensureNodeRuntime = async ({
     reporter.info(`Found node ${version} at ${runtimePath}`);
 
     return;
+  }
+
+  if (await pathExists(runtimePath)) {
+    reporter.info(`Replacing incomplete node ${version} at ${runtimePath}`);
+    await removePath(runtimePath);
   }
 
   reporter.info(`Installing node ${version} at ${runtimePath}`);
