@@ -4,10 +4,9 @@ import { join } from "node:path";
 
 import type { ShimConfig } from "@/core/config";
 import { ensureShimHome } from "@/core/home";
-import type { InstallOptions, RegistryTool, ShimMetadata } from "@/core/models";
+import type { InstallOptions, RegistryTool } from "@/core/models";
 import {
   checkBinConflicts,
-  getToolId,
   loadRegistry,
   saveRegistry,
   upsertTool,
@@ -29,11 +28,15 @@ import {
 } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
-import { NPM_PROVIDER_ID } from "./constants";
 import { runNpmInstall } from "./installer";
 import { resolveNpmPackage } from "./metadata";
 import { npmMetadataPath, npmPackageRoot, npmToolPath } from "./paths";
-import { createNpmRegistryTool } from "./registry";
+import {
+  createInitialMetadata,
+  createNpmRegistryTool,
+  getNpmToolId,
+} from "./registry";
+import { backupNpmShims, restoreNpmShims } from "./shim-backups";
 import {
   createNpmShims,
   discoverNpmBinNames,
@@ -48,31 +51,6 @@ type InstallNpmPackageInput = {
   options: InstallOptions;
   reporter: Reporter;
 };
-
-type CreateInitialMetadataInput = {
-  packageName: string;
-  packageVersion: string;
-  packageSpec: string;
-  nodeVersion: string;
-  enginesNode: string | undefined;
-};
-
-const createInitialMetadata = ({
-  packageName,
-  packageVersion,
-  packageSpec,
-  nodeVersion,
-  enginesNode,
-}: CreateInitialMetadataInput): ShimMetadata => ({
-  provider: NPM_PROVIDER_ID,
-  packageName,
-  packageVersion,
-  packageSpec,
-  runtime: { kind: NODE_RUNTIME_ID, version: nodeVersion },
-  runtimeData: { enginesNode },
-  installedAt: new Date().toISOString(),
-  bins: {},
-});
 
 export const installNpmPackage = async ({
   paths,
@@ -92,8 +70,7 @@ export const installNpmPackage = async ({
     packageSpec,
     reporter,
   });
-  const existingTool =
-    registry.tools[getToolId(NPM_PROVIDER_ID, metadata.name)];
+  const existingTool = registry.tools[getNpmToolId(metadata.name)];
 
   if (existingTool !== undefined && !options.force) {
     reporter.info("");
@@ -148,7 +125,9 @@ export const installNpmPackage = async ({
   await removePath(stagePath);
   await ensureDir(stagePrefixPath);
 
+  const previousBins = existingTool === undefined ? [] : existingTool.bins;
   let stageWasPromoted = false;
+  let shimBackups: Awaited<ReturnType<typeof backupNpmShims>> = [];
 
   try {
     reporter.info(
@@ -172,6 +151,12 @@ export const installNpmPackage = async ({
       binNames,
       force: options.force,
       replaceToolId: options.replaceToolId,
+    });
+
+    shimBackups = await backupNpmShims({
+      paths,
+      nextBins: binNames,
+      previousBins,
     });
 
     const initialMetadata = createInitialMetadata({
@@ -231,7 +216,7 @@ export const installNpmPackage = async ({
 
     await removeStaleNpmShims({
       paths,
-      previousBins: registry.tools[tool.id]?.bins ?? [],
+      previousBins,
       nextBins: binNames,
       reporter,
     });
@@ -245,6 +230,8 @@ export const installNpmPackage = async ({
     if (stageWasPromoted) {
       await removePath(finalToolPath);
     }
+
+    await restoreNpmShims(shimBackups);
 
     throw error;
   }
