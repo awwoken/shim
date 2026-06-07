@@ -37,15 +37,21 @@ export const saveRegistry = async (
 export const getToolId = (provider: ProviderId, packageName: string): ToolId =>
   `${provider}:${packageName}`;
 
+export type UpsertToolResult = {
+  registry: Registry;
+  displacedTools: RegistryTool[];
+};
+
 export const upsertTool = (
   registry: Registry,
   tool: RegistryTool,
-): Registry => {
+): UpsertToolResult => {
   const nextRegistry: Registry = {
     version: REGISTRY_SCHEMA_VERSION,
     tools: { ...registry.tools, [tool.id]: tool },
     bins: { ...registry.bins },
   };
+  const displacedTools = new Map<ToolId, RegistryTool>();
   const previousActiveTool = registry.tools[tool.id];
 
   if (previousActiveTool !== undefined) {
@@ -63,10 +69,14 @@ export const upsertTool = (
       const previousTool = nextRegistry.tools[previousOwner.toolId];
 
       if (previousTool !== undefined) {
-        nextRegistry.tools[previousOwner.toolId] = {
-          ...previousTool,
-          bins: previousTool.bins.filter((name) => name !== binName),
-        };
+        displacedTools.set(previousTool.id, previousTool);
+        Reflect.deleteProperty(nextRegistry.tools, previousTool.id);
+
+        for (const previousBinName of previousTool.bins) {
+          if (nextRegistry.bins[previousBinName]?.toolId === previousTool.id) {
+            Reflect.deleteProperty(nextRegistry.bins, previousBinName);
+          }
+        }
       }
     }
 
@@ -79,7 +89,10 @@ export const upsertTool = (
     };
   }
 
-  return nextRegistry;
+  return {
+    registry: nextRegistry,
+    displacedTools: [...displacedTools.values()],
+  };
 };
 
 export const removeTool = (

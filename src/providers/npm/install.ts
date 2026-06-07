@@ -19,7 +19,6 @@ import type { Reporter } from "@/core/reporter";
 import {
   ensureNodeRuntime,
   fetchNodeReleases,
-  selectLatestLts,
   selectNodeVersion,
 } from "@/runtimes/node";
 import { NODE_RUNTIME_ID } from "@/runtimes/node/constants";
@@ -46,6 +45,7 @@ import {
 import {
   createNpmShims,
   discoverNpmBinNames,
+  removeDisplacedNpmTools,
   removeStaleNpmShims,
   renderNpmExecutableSummary,
 } from "./shims";
@@ -91,8 +91,11 @@ export const installNpmPackage = async ({
 
   const nodeConfig = config.runtimes[NODE_RUNTIME_ID];
   const releases = await fetchNodeReleases(nodeConfig);
-  const bootstrapNode =
-    nodeConfig.bootstrapVersion ?? selectLatestLts(releases);
+  const bootstrapNode = selectNodeVersion(
+    releases,
+    undefined,
+    nodeConfig.bootstrapVersion,
+  );
   const targetNode = selectNodeVersion(
     releases,
     metadata.enginesNode,
@@ -237,8 +240,16 @@ export const installNpmPackage = async ({
       nextBins: binNames,
       reporter,
     });
-    await saveRegistry(paths, upsertTool(registry, tool));
+    const upsertResult = upsertTool(registry, tool);
+    await saveRegistry(paths, upsertResult.registry);
     reporter.info(`Updated registry ${paths.registry}`);
+
+    await removeDisplacedNpmTools({
+      paths,
+      tools: upsertResult.displacedTools,
+      retainedBins: binNames,
+      reporter,
+    });
 
     await removeSupersededNpmToolPath({
       previousToolPath: existingTool?.toolPath,

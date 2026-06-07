@@ -1,16 +1,16 @@
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-import type { ShimMetadata } from "@/core/models";
+import type { RegistryTool, ShimMetadata } from "@/core/models";
 import type { Reporter } from "@/core/reporter";
 import { nodeBinPath } from "@/runtimes/node";
 import { createNodeExecutableShim } from "@/runtimes/node/shims";
 import { hasOneItem, isEmptyArray } from "@/support/collections";
-import { AppError } from "@/support/errors";
+import { AppError, toErrorMessage } from "@/support/errors";
 import { assertDirectory, removePath } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
-import { npmToolPath } from "./paths";
+import { npmPackageRoot, npmToolPath } from "./paths";
 
 export type CreateNpmShimsInput = {
   paths: ShimPaths;
@@ -101,6 +101,52 @@ export const removeStaleNpmShims = async ({
       const shimPath = join(paths.bin, binName);
       await removePath(shimPath);
       reporter.info(`Removed stale shim ${shimPath}`);
+    }
+  }
+};
+
+type RemoveDisplacedNpmToolsInput = {
+  paths: ShimPaths;
+  tools: RegistryTool[];
+  retainedBins: string[];
+  reporter: Reporter;
+};
+
+export const removeDisplacedNpmTools = async ({
+  paths,
+  tools,
+  retainedBins,
+  reporter,
+}: RemoveDisplacedNpmToolsInput): Promise<void> => {
+  const retainedBinSet = new Set(retainedBins);
+
+  for (const tool of tools) {
+    for (const binName of tool.bins) {
+      if (retainedBinSet.has(binName)) {
+        continue;
+      }
+
+      const shimPath = join(paths.bin, binName);
+
+      try {
+        await removePath(shimPath);
+        reporter.info(`Removed displaced shim ${shimPath}`);
+      } catch (caughtError) {
+        reporter.info(
+          `Could not remove displaced shim ${shimPath}: ${toErrorMessage(caughtError)}`,
+        );
+      }
+    }
+
+    const packageRoot = npmPackageRoot(paths, tool.packageName);
+
+    try {
+      await removePath(packageRoot);
+      reporter.info(`Removed displaced package root ${packageRoot}`);
+    } catch (caughtError) {
+      reporter.info(
+        `Could not remove displaced package root ${packageRoot}: ${toErrorMessage(caughtError)}`,
+      );
     }
   }
 };
