@@ -1,8 +1,10 @@
 import type { ProviderId, Registry, RegistryTool, ToolId } from "@/core/models";
 import { REGISTRY_SCHEMA_VERSION } from "@/core/registry/constants";
+import { registrySchema } from "@/core/registry/schema";
 import { AppError } from "@/support/errors";
 import { pathExists, readJsonFile, writeJsonAtomic } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
+import { parseJsonSchema } from "@/support/validation";
 
 export const createEmptyRegistry = (): Registry => ({
   version: REGISTRY_SCHEMA_VERSION,
@@ -11,17 +13,18 @@ export const createEmptyRegistry = (): Registry => ({
 });
 
 export const loadRegistry = async (paths: ShimPaths): Promise<Registry> => {
-  const registry = await readJsonFile<Registry>(paths.registry);
+  const registry = await readJsonFile<unknown>(paths.registry);
 
   if (registry === undefined) {
     return createEmptyRegistry();
   }
 
-  if (registry.version !== REGISTRY_SCHEMA_VERSION) {
-    throw new AppError(`Unsupported registry version ${registry.version}`);
-  }
-
-  return registry;
+  return parseJsonSchema({
+    schema: registrySchema,
+    value: registry,
+    label: "registry file",
+    path: paths.registry,
+  });
 };
 
 export const saveRegistry = async (
