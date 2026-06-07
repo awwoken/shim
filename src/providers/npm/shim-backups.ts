@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { chmod, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
-import { AppError } from "@/support/errors";
+import type { Reporter } from "@/core/reporter";
+import { AppError, toErrorMessage } from "@/support/errors";
 import { ensureDir, pathExists, removePath } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
@@ -97,6 +98,34 @@ export const restoreNpmToolPathBackup = async ({
 
   await removePath(finalToolPath);
   await rename(backupPath, finalToolPath);
+};
+
+type RemoveSupersededNpmToolPathInput = {
+  previousToolPath?: string;
+  nextToolPath: string;
+  reporter: Reporter;
+};
+
+export const removeSupersededNpmToolPath = async ({
+  previousToolPath,
+  nextToolPath,
+  reporter,
+}: RemoveSupersededNpmToolPathInput): Promise<void> => {
+  if (
+    previousToolPath === undefined ||
+    resolve(previousToolPath) === resolve(nextToolPath)
+  ) {
+    return;
+  }
+
+  try {
+    await removePath(previousToolPath);
+    reporter.info(`Removed superseded tool path ${previousToolPath}`);
+  } catch (caughtError) {
+    reporter.info(
+      `Could not remove superseded tool path: ${toErrorMessage(caughtError)}`,
+    );
+  }
 };
 
 type BackupNpmShimsInput = {

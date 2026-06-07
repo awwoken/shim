@@ -35,6 +35,7 @@ import {
   backupExistingNpmToolPath,
   backupNpmShims,
   removeNpmToolPathBackup,
+  removeSupersededNpmToolPath,
   restoreNpmShims,
   restoreNpmToolPathBackup,
 } from "./shim-backups";
@@ -227,6 +228,12 @@ export const installNpmPackage = async ({
     });
     await saveRegistry(paths, upsertTool(registry, tool));
     reporter.info(`Updated registry ${paths.registry}`);
+
+    await removeSupersededNpmToolPath({
+      previousToolPath: existingTool?.toolPath,
+      nextToolPath: finalToolPath,
+      reporter,
+    });
 
     try {
       await removeNpmToolPathBackup(toolPathBackup);
