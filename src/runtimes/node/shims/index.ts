@@ -1,11 +1,17 @@
 import { lstat, readFile, realpath, readlink } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  resolve,
+} from "node:path";
 
 import type { BinMetadata } from "@/core/models";
 import {
   NODE_DIRECT_SHIM_KIND,
   NODE_PATH_FALLBACK_SHIM_KIND,
-  SHEBANG_COMMAND_MATCH_INDEX,
   SHELL_WRAPPER_ENTRY_MATCH_INDEX,
 } from "@/runtimes/node/shims/constants";
 import { ensureDir, ensureExecutable, writeFileAtomic } from "@/support/fs";
@@ -88,30 +94,73 @@ const readFirstLine = async (path: string): Promise<string | null> => {
   return firstLine;
 };
 
-const shebangUsesNode = (firstLine: string): boolean => {
-  if (!firstLine.startsWith("#!")) {
-    return false;
-  }
-
-  return firstLine.includes("node");
+type ShebangCommand = {
+  command: string;
+  args: string[];
 };
 
-const shebangHasNodeOptions = (firstLine: string): boolean => {
-  const command =
-    firstLine.match(/^#!\S+\s+(.*)$/u)?.[SHEBANG_COMMAND_MATCH_INDEX];
+const splitShebang = (firstLine: string): string[] | null => {
+  if (!firstLine.startsWith("#!")) {
+    return null;
+  }
 
-  if (command === undefined) {
+  const parts = firstLine.slice("#!".length).trim().split(/\s+/u);
+  const [interpreter] = parts;
+
+  return interpreter === undefined ? null : parts;
+};
+
+const parseEnvShebangCommand = (args: string[]): ShebangCommand | null => {
+  const [firstArg, ...restArgs] = args;
+
+  if (firstArg === "-S") {
+    const [command, ...commandArgs] = restArgs;
+
+    return command === undefined
+      ? null
+      : { command: basename(command), args: commandArgs };
+  }
+
+  if (firstArg === undefined || firstArg.startsWith("-")) {
+    return null;
+  }
+
+  return { command: basename(firstArg), args: restArgs };
+};
+
+const parseShebangCommand = (firstLine: string): ShebangCommand | null => {
+  const parts = splitShebang(firstLine);
+
+  if (parts === null) {
+    return null;
+  }
+
+  const [interpreter, ...args] = parts;
+
+  if (interpreter === undefined) {
+    return null;
+  }
+
+  const interpreterName = basename(interpreter);
+
+  if (interpreterName === "env") {
+    return parseEnvShebangCommand(args);
+  }
+
+  return { command: interpreterName, args };
+};
+
+const shebangUsesNode = (firstLine: string): boolean =>
+  parseShebangCommand(firstLine)?.command === "node";
+
+const shebangHasNodeOptions = (firstLine: string): boolean => {
+  const command = parseShebangCommand(firstLine);
+
+  if (command === null) {
     return false;
   }
 
-  const normalizedCommand = command.startsWith("-S ")
-    ? command.slice("-S ".length)
-    : command;
-
-  return normalizedCommand
-    .trim()
-    .split(/\s+/u)
-    .some((part) => part.startsWith("-"));
+  return command.args.some((part) => part.startsWith("-"));
 };
 
 const canUseDirectNodeShim = async (entryPath: string): Promise<boolean> => {
