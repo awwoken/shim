@@ -148,6 +148,8 @@ export const installNpmPackage = async ({
   await removePath(stagePath);
   await ensureDir(stagePrefixPath);
 
+  let stageWasPromoted = false;
+
   try {
     reporter.info(
       `Installing ${metadata.name}@${metadata.version} into ${finalToolPath}`,
@@ -195,6 +197,7 @@ export const installNpmPackage = async ({
 
     await ensureDir(packageRoot);
     await rename(stagePath, finalToolPath);
+    stageWasPromoted = true;
 
     const shimMetadata = await createNpmShims({
       paths,
@@ -238,6 +241,10 @@ export const installNpmPackage = async ({
     return tool;
   } catch (error) {
     await removePath(stagePath);
+
+    if (stageWasPromoted) {
+      await removePath(finalToolPath);
+    }
 
     throw error;
   }
