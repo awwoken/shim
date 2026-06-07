@@ -1,5 +1,5 @@
 import type { ShimConfig } from "@/core/config";
-import { npmBinPath } from "@/runtimes/node";
+import { nodeBinPath, npmBinPath } from "@/runtimes/node";
 import type { ShimPaths } from "@/support/paths";
 import { runCommand } from "@/support/process";
 
@@ -40,5 +40,8 @@ export const runNpmInstall = async ({
     args.push("--ignore-scripts");
   }
 
-  await runCommand(npmBinPath(paths, nodeVersion), args);
+  await runCommand(nodeBinPath(paths, nodeVersion), [
+    npmBinPath(paths, nodeVersion),
+    ...args,
+  ]);
 };

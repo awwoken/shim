@@ -134,7 +134,8 @@ export const resolveNpmPackage = async ({
   reporter.info(`Resolving ${packageSpec} from ${registry}`);
 
   try {
-    const { stdout } = await runCommand(npmPath, [
+    const { stdout } = await runCommand(nodePath, [
+      npmPath,
       "view",
       packageSpec,
       "--json",
