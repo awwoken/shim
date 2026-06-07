@@ -29,10 +29,16 @@ export const acquireMutationLock = async (
     throw error;
   }
 
-  await writeJsonAtomic(join(lockPath, "owner.json"), {
-    pid: process.pid,
-    createdAt: new Date().toISOString(),
-  });
+  try {
+    await writeJsonAtomic(join(lockPath, "owner.json"), {
+      pid: process.pid,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    await rm(lockPath, { force: true, recursive: true });
+
+    throw error;
+  }
 
   return {
     release: async (): Promise<void> => {
