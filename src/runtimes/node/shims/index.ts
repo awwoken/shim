@@ -14,13 +14,25 @@ import { isExpectedFsProbeError } from "@/support/fs/errors";
 const shellQuote = (value: string): string =>
   `'${value.replaceAll("'", "'\\''")}'`;
 
-const directNodeShim = (nodePath: string, entryPath: string): string =>
-  `#!/bin/sh\nexec ${shellQuote(nodePath)} ${shellQuote(entryPath)} "$@"\n`;
+const managedNodePathExport = (nodeBinDir: string): string =>
+  `export PATH=${shellQuote(nodeBinDir)}":$PATH"`;
+
+const directNodeShim = (
+  nodePath: string,
+  entryPath: string,
+  nodeBinDir: string,
+): string =>
+  [
+    "#!/bin/sh",
+    managedNodePathExport(nodeBinDir),
+    `exec ${shellQuote(nodePath)} ${shellQuote(entryPath)} "$@"`,
+    "",
+  ].join("\n");
 
 const pathFallbackShim = (sourceBinPath: string, nodeBinDir: string): string =>
   [
     "#!/bin/sh",
-    `export PATH=${shellQuote(nodeBinDir)}":$PATH"`,
+    managedNodePathExport(nodeBinDir),
     `exec ${shellQuote(sourceBinPath)} "$@"`,
     "",
   ].join("\n");
@@ -141,10 +153,11 @@ export const createNodeExecutableShim = async (
   nodePath: string,
 ): Promise<BinMetadata> => {
   const entry = await resolveNodeEntry(sourceBinPath);
+  const nodeBinDir = dirname(nodePath);
   const content =
     entry === null
-      ? pathFallbackShim(sourceBinPath, dirname(nodePath))
-      : directNodeShim(nodePath, entry);
+      ? pathFallbackShim(sourceBinPath, nodeBinDir)
+      : directNodeShim(nodePath, entry, nodeBinDir);
 
   await ensureDir(dirname(shimPath));
   await writeFileAtomic(shimPath, content);
