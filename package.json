@@ -1,0 +1,38 @@
+{
+  "name": "shim",
+  "version": "0.0.1",
+  "private": true,
+  "bin": {
+    "shim": "./build/shim"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "bun src/index.ts",
+    "build": "bun build src/index.ts --compile --minify --outfile build/shim",
+    "test": "bun test",
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint --format=unix",
+    "lint:fix": "oxlint --format=unix --fix"
+  },
+  "dependencies": {
+    "commander": "^14.0.2",
+    "picocolors": "^1.1.1",
+    "semver": "^7.7.3",
+    "valibot": "^1.4.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^25.0.0",
+    "@types/semver": "^7.7.1",
+    "@typescript/native-preview": "beta",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.30.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "packageManager": "bun@1.4.0-canary.1"
+}
