@@ -1,6 +1,8 @@
-import { chmod, readFile, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { AppError } from "@/support/errors";
 import { ensureDir, pathExists, removePath } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
@@ -40,6 +42,61 @@ const restoreShim = async ({
   if (mode !== undefined) {
     await chmod(path, mode);
   }
+};
+
+type NpmToolPathBackup = {
+  backupPath?: string;
+  finalToolPath: string;
+};
+
+type BackupExistingNpmToolPathInput = {
+  finalToolPath: string;
+  force: boolean;
+  packageRoot: string;
+  packageName: string;
+  packageVersion: string;
+};
+
+export const backupExistingNpmToolPath = async ({
+  finalToolPath,
+  force,
+  packageRoot,
+  packageName,
+  packageVersion,
+}: BackupExistingNpmToolPathInput): Promise<NpmToolPathBackup> => {
+  if (!(await pathExists(finalToolPath))) {
+    return { finalToolPath };
+  }
+
+  if (!force) {
+    throw new AppError(`${packageName}@${packageVersion} is already installed`);
+  }
+
+  const backupPath = join(packageRoot, `.replacement-${randomUUID()}`);
+  await ensureDir(packageRoot);
+  await rename(finalToolPath, backupPath);
+
+  return { finalToolPath, backupPath };
+};
+
+export const removeNpmToolPathBackup = async ({
+  backupPath,
+}: NpmToolPathBackup): Promise<void> => {
+  if (backupPath !== undefined) {
+    await removePath(backupPath);
+  }
+};
+
+export const restoreNpmToolPathBackup = async ({
+  backupPath,
+  finalToolPath,
+}: NpmToolPathBackup): Promise<void> => {
+  if (backupPath === undefined) {
+    return;
+  }
+
+  await removePath(finalToolPath);
+  await rename(backupPath, finalToolPath);
 };
 
 type BackupNpmShimsInput = {

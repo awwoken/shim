@@ -19,13 +19,8 @@ import {
   selectNodeVersion,
 } from "@/runtimes/node";
 import { NODE_RUNTIME_ID } from "@/runtimes/node/constants";
-import { AppError } from "@/support/errors";
-import {
-  ensureDir,
-  pathExists,
-  removePath,
-  writeJsonAtomic,
-} from "@/support/fs";
+import { AppError, toErrorMessage } from "@/support/errors";
+import { ensureDir, removePath, writeJsonAtomic } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
 import { runNpmInstall } from "./installer";
@@ -36,7 +31,13 @@ import {
   createNpmRegistryTool,
   getNpmToolId,
 } from "./registry";
-import { backupNpmShims, restoreNpmShims } from "./shim-backups";
+import {
+  backupExistingNpmToolPath,
+  backupNpmShims,
+  removeNpmToolPathBackup,
+  restoreNpmShims,
+  restoreNpmToolPathBackup,
+} from "./shim-backups";
 import {
   createNpmShims,
   discoverNpmBinNames,
@@ -128,6 +129,9 @@ export const installNpmPackage = async ({
   const previousBins = existingTool === undefined ? [] : existingTool.bins;
   let stageWasPromoted = false;
   let shimBackups: Awaited<ReturnType<typeof backupNpmShims>> = [];
+  let toolPathBackup: Awaited<ReturnType<typeof backupExistingNpmToolPath>> = {
+    finalToolPath,
+  };
 
   try {
     reporter.info(
@@ -169,15 +173,16 @@ export const installNpmPackage = async ({
 
     await writeJsonAtomic(join(stagePath, "shim.json"), initialMetadata);
 
-    if (await pathExists(finalToolPath)) {
-      if (!options.force) {
-        throw new AppError(
-          `${metadata.name}@${metadata.version} is already installed`,
-        );
-      }
+    toolPathBackup = await backupExistingNpmToolPath({
+      finalToolPath,
+      force: options.force,
+      packageRoot,
+      packageName: metadata.name,
+      packageVersion: metadata.version,
+    });
 
-      await removePath(finalToolPath);
-      reporter.info(`Replaced existing tool path ${finalToolPath}`);
+    if (toolPathBackup.backupPath !== undefined) {
+      reporter.info(`Moved existing tool path ${finalToolPath} aside`);
     }
 
     await ensureDir(packageRoot);
@@ -223,6 +228,14 @@ export const installNpmPackage = async ({
     await saveRegistry(paths, upsertTool(registry, tool));
     reporter.info(`Updated registry ${paths.registry}`);
 
+    try {
+      await removeNpmToolPathBackup(toolPathBackup);
+    } catch (caughtError) {
+      reporter.info(
+        `Could not remove replacement backup: ${toErrorMessage(caughtError)}`,
+      );
+    }
+
     return tool;
   } catch (error) {
     await removePath(stagePath);
@@ -231,6 +244,7 @@ export const installNpmPackage = async ({
       await removePath(finalToolPath);
     }
 
+    await restoreNpmToolPathBackup(toolPathBackup);
     await restoreNpmShims(shimBackups);
 
     throw error;
