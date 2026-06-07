@@ -64,7 +64,7 @@ const verifyNodeArchive = async (
   archivePath: string,
   archiveName: string,
   sumsUrl: string,
-): Promise<void> => {
+): Promise<boolean> => {
   const response = await fetch(sumsUrl);
 
   if (!response.ok) {
@@ -76,7 +76,39 @@ const verifyNodeArchive = async (
   const expected = parseShaSums(await response.text(), archiveName);
   const actual = await sha256File(archivePath);
 
-  if (actual !== expected) {
+  return actual === expected;
+};
+
+type EnsureVerifiedNodeArchiveOptions = {
+  archiveUrl: string;
+  cachePath: string;
+  archiveName: string;
+  sumsUrl: string;
+  reporter: Reporter;
+};
+
+const ensureVerifiedNodeArchive = async ({
+  archiveUrl,
+  cachePath,
+  archiveName,
+  sumsUrl,
+  reporter,
+}: EnsureVerifiedNodeArchiveOptions): Promise<void> => {
+  await downloadFile(archiveUrl, cachePath, reporter);
+  reporter.info(`Verifying node archive ${cachePath}`);
+
+  if (await verifyNodeArchive(cachePath, archiveName, sumsUrl)) {
+    return;
+  }
+
+  reporter.info(
+    `Cached node archive failed verification, redownloading ${cachePath}`,
+  );
+  await removePath(cachePath);
+  await downloadFile(archiveUrl, cachePath, reporter);
+  reporter.info(`Verifying node archive ${cachePath}`);
+
+  if (!(await verifyNodeArchive(cachePath, archiveName, sumsUrl))) {
     throw new AppError(`SHA256 mismatch for ${archiveName}`);
   }
 };
@@ -147,9 +179,13 @@ export const downloadNodeRuntime = async ({
   await ensureDir(stagePath);
 
   try {
-    await downloadFile(archiveUrl, cachePath, reporter);
-    reporter.info(`Verifying node archive ${cachePath}`);
-    await verifyNodeArchive(cachePath, archive, sumsUrl);
+    await ensureVerifiedNodeArchive({
+      archiveUrl,
+      cachePath,
+      archiveName: archive,
+      sumsUrl,
+      reporter,
+    });
     await validateTarEntries(
       cachePath,
       `node-v${version}-${nodePlatformSlug()}`,
