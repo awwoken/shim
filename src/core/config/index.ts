@@ -1,6 +1,8 @@
+import { partialShimConfigSchema } from "@/core/config/schema";
 import { NODE_RUNTIME_ID, NPM_PROVIDER_ID } from "@/core/ids";
 import { readJsonFile } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
+import { parseJsonSchema } from "@/support/validation";
 
 export type NodeRuntimeConfig = {
   defaultPolicy: "latest-lts";
@@ -21,19 +23,6 @@ export type ShimConfig = {
   };
 };
 
-type LegacyShimConfig = {
-  defaultNodePolicy?: NodeRuntimeConfig["defaultPolicy"];
-  bootstrapNode?: string;
-  registry?: string;
-  nodeMirror?: string;
-};
-
-type PartialShimConfig = Partial<{
-  providers: Partial<ShimConfig["providers"]>;
-  runtimes: Partial<ShimConfig["runtimes"]>;
-}> &
-  LegacyShimConfig;
-
 export const defaultConfig = (): ShimConfig => ({
   providers: {
     [NPM_PROVIDER_ID]: {
@@ -49,13 +38,19 @@ export const defaultConfig = (): ShimConfig => ({
 });
 
 export const loadConfig = async (paths: ShimPaths): Promise<ShimConfig> => {
-  const config = await readJsonFile<PartialShimConfig>(paths.config);
+  const configJson = await readJsonFile<unknown>(paths.config);
   const defaults = defaultConfig();
 
-  if (config === undefined) {
+  if (configJson === undefined) {
     return defaults;
   }
 
+  const config = parseJsonSchema({
+    schema: partialShimConfigSchema,
+    value: configJson,
+    label: "config file",
+    path: paths.config,
+  });
   const npmConfig = config.providers?.[NPM_PROVIDER_ID];
   const nodeConfig = config.runtimes?.[NODE_RUNTIME_ID];
 
