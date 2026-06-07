@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 80,
+  "experimentalSortImports": {
+    "groups": ["builtin", "external", "workspace", "internal", "unknown"],
+    "customGroups": [
+      {
+        "groupName": "workspace",
+        "elementNamePattern": ["@shim/**"]
+      }
+    ],
+    "internalPattern": ["#"],
+    "newlinesBetween": true
+  },
+  "ignorePatterns": []
+}
