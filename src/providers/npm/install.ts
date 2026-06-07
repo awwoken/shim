@@ -169,6 +169,7 @@ export const installNpmPackage = async ({
       registry,
       binNames,
       force: options.force,
+      replaceToolId: options.replaceToolId,
     });
 
     const initialMetadata = createInitialMetadata({

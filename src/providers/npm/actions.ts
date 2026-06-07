@@ -124,6 +124,7 @@ export const upgradeNpmTools = async ({
       options: {
         force: true,
         ignoreScripts: false,
+        replaceToolId: tool.id,
       },
       reporter,
     });

@@ -126,6 +126,7 @@ type BinConflictInput = {
   registry: Registry;
   binNames: string[];
   force: boolean;
+  replaceToolId?: ToolId;
 };
 
 export const checkBinConflicts = async ({
@@ -133,8 +134,9 @@ export const checkBinConflicts = async ({
   registry,
   binNames,
   force,
+  replaceToolId,
 }: BinConflictInput): Promise<void> => {
-  if (force) {
+  if (force && replaceToolId === undefined) {
     return;
   }
 
@@ -142,6 +144,10 @@ export const checkBinConflicts = async ({
     const owner = registry.bins[binName];
 
     if (owner !== undefined) {
+      if (owner.toolId === replaceToolId) {
+        continue;
+      }
+
       throw new AppError(
         `Bin "${binName}" is already installed by ${owner.packageName}@${owner.packageVersion}`,
         "Use --force to replace it",

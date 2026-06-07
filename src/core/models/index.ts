@@ -58,4 +58,5 @@ export type InstallOptions = {
   runtime?: string;
   force: boolean;
   ignoreScripts: boolean;
+  replaceToolId?: ToolId;
 };
