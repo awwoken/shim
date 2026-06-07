@@ -50,6 +50,10 @@ export const removeNpmTool = async (
     throw new AppError(`No installed package or bin matched "${packageOrBin}"`);
   }
 
+  const result = removeTool(registry, tool.id);
+  await saveRegistry(paths, result.registry);
+  reporter.info(`Updated registry ${paths.registry}`);
+
   for (const binName of tool.bins) {
     const shimPath = join(paths.bin, binName);
     await removePath(shimPath);
@@ -59,10 +63,6 @@ export const removeNpmTool = async (
   const packageRoot = npmPackageRoot(paths, tool.packageName);
   await removePath(packageRoot);
   reporter.info(`Removed package root ${packageRoot}`);
-
-  const result = removeTool(registry, tool.id);
-  await saveRegistry(paths, result.registry);
-  reporter.info(`Updated registry ${paths.registry}`);
 
   return tool;
 };

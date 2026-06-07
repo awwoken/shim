@@ -2,11 +2,14 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { AppError } from "@/support/errors";
 import { providerToolRoot, type ShimPaths } from "@/support/paths";
+import * as semver from "semver";
 
 import { NPM_PROVIDER_ID } from "./constants";
 
 const INVALID_PACKAGE_NAME_HINT =
   "Use an npm package name without empty or traversal path segments.";
+const INVALID_PACKAGE_VERSION_HINT =
+  "Use a concrete semver package version such as 1.2.3.";
 const SCOPED_PACKAGE_SEGMENT_COUNT = 2;
 
 const isSafePackagePathSegment = (segment: string): boolean =>
@@ -27,6 +30,20 @@ const assertSafePackagePathSegment = (
       INVALID_PACKAGE_NAME_HINT,
     );
   }
+};
+
+const assertSafePackageVersion = (
+  packageName: string,
+  version: string,
+): void => {
+  if (semver.valid(version) !== null) {
+    return;
+  }
+
+  throw new AppError(
+    `Invalid npm package version ${version} for ${packageName}`,
+    INVALID_PACKAGE_VERSION_HINT,
+  );
 };
 
 const assertPathInsideRoot = (
@@ -86,7 +103,16 @@ export const npmToolPath = (
   paths: ShimPaths,
   packageName: string,
   version: string,
-): string => join(npmPackageRoot(paths, packageName), version);
+): string => {
+  assertSafePackageVersion(packageName, version);
+
+  const packageRoot = npmPackageRoot(paths, packageName);
+  const toolPath = join(packageRoot, version);
+
+  assertPathInsideRoot(packageName, packageRoot, toolPath);
+
+  return toolPath;
+};
 
 export const npmPrefixPath = (
   paths: ShimPaths,
