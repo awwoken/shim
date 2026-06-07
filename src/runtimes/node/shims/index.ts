@@ -5,6 +5,7 @@ import type { BinMetadata } from "@/core/models";
 import {
   NODE_DIRECT_SHIM_KIND,
   NODE_PATH_FALLBACK_SHIM_KIND,
+  SHEBANG_COMMAND_MATCH_INDEX,
   SHELL_WRAPPER_ENTRY_MATCH_INDEX,
 } from "@/runtimes/node/shims/constants";
 import { ensureDir, ensureExecutable, writeFileAtomic } from "@/support/fs";
@@ -63,16 +64,8 @@ const resolveShellWrappedNodeEntry = (
   return join(dirname(wrapperPath), entry);
 };
 
-const resolveNodeEntry = async (
-  sourceBinPath: string,
-): Promise<string | null> => {
-  const resolvedPath = await resolveSymlink(sourceBinPath);
-
-  if (extname(resolvedPath) === ".js") {
-    return resolvedPath;
-  }
-
-  const content = await readSmallTextFile(resolvedPath);
+const readFirstLine = async (path: string): Promise<string | null> => {
+  const content = await readSmallTextFile(path);
 
   if (content === null) {
     return null;
@@ -80,11 +73,66 @@ const resolveNodeEntry = async (
 
   const [firstLine = ""] = content.split("\n");
 
-  if (firstLine.includes("node")) {
-    return resolvedPath;
+  return firstLine;
+};
+
+const shebangUsesNode = (firstLine: string): boolean => {
+  if (!firstLine.startsWith("#!")) {
+    return false;
   }
 
-  return resolveShellWrappedNodeEntry(resolvedPath, content);
+  return firstLine.includes("node");
+};
+
+const shebangHasNodeOptions = (firstLine: string): boolean => {
+  const command =
+    firstLine.match(/^#!\S+\s+(.*)$/u)?.[SHEBANG_COMMAND_MATCH_INDEX];
+
+  if (command === undefined) {
+    return false;
+  }
+
+  const normalizedCommand = command.startsWith("-S ")
+    ? command.slice("-S ".length)
+    : command;
+
+  return normalizedCommand
+    .trim()
+    .split(/\s+/u)
+    .some((part) => part.startsWith("-"));
+};
+
+const canUseDirectNodeShim = async (entryPath: string): Promise<boolean> => {
+  const firstLine = await readFirstLine(entryPath);
+
+  return firstLine === null || !shebangHasNodeOptions(firstLine);
+};
+
+const resolveNodeEntry = async (
+  sourceBinPath: string,
+): Promise<string | null> => {
+  const resolvedPath = await resolveSymlink(sourceBinPath);
+  const content = await readSmallTextFile(resolvedPath);
+
+  if (content === null) {
+    return extname(resolvedPath) === ".js" ? resolvedPath : null;
+  }
+
+  const [firstLine = ""] = content.split("\n");
+
+  if (shebangUsesNode(firstLine)) {
+    return shebangHasNodeOptions(firstLine) ? null : resolvedPath;
+  }
+
+  const shellWrappedEntry = resolveShellWrappedNodeEntry(resolvedPath, content);
+
+  if (shellWrappedEntry === null) {
+    return null;
+  }
+
+  return (await canUseDirectNodeShim(shellWrappedEntry))
+    ? shellWrappedEntry
+    : null;
 };
 
 export const createNodeExecutableShim = async (
