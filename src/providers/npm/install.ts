@@ -93,10 +93,11 @@ export const installNpmPackage = async ({
   const releases = await fetchNodeReleases(nodeConfig);
   const bootstrapNode =
     nodeConfig.bootstrapVersion ?? selectLatestLts(releases);
-  const targetNode =
-    options.runtime === undefined && metadata.enginesNode === undefined
-      ? bootstrapNode
-      : selectNodeVersion(releases, metadata.enginesNode, options.runtime);
+  const targetNode = selectNodeVersion(
+    releases,
+    metadata.enginesNode,
+    options.runtime,
+  );
 
   if (options.runtime !== undefined) {
     reporter.info(
@@ -104,7 +105,7 @@ export const installNpmPackage = async ({
     );
   } else if (metadata.enginesNode === undefined) {
     reporter.info(
-      `Package did not declare node requirement; using bootstrap node ${bootstrapNode}`,
+      `Package did not declare node requirement; selected node ${targetNode}`,
     );
   } else {
     reporter.info(
