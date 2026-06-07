@@ -1,3 +1,5 @@
+import { delimiter, dirname } from "node:path";
+
 import type { ShimConfig } from "@/core/config";
 import { nodeBinPath, npmBinPath } from "@/runtimes/node";
 import type { ShimPaths } from "@/support/paths";
@@ -13,6 +15,35 @@ export type RunNpmInstallInput = {
   packageName: string;
   packageVersion: string;
   ignoreScripts: boolean;
+};
+
+const copyCurrentEnvironment = (): Record<string, string> => {
+  const env: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(Bun.env)) {
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+
+  return env;
+};
+
+const prependPath = (entry: string, path: string | undefined): string => {
+  if (path === undefined || path === "") {
+    return entry;
+  }
+
+  return `${entry}${delimiter}${path}`;
+};
+
+const createManagedNodeEnvironment = (
+  nodePath: string,
+): Record<string, string> => {
+  const env = copyCurrentEnvironment();
+  env["PATH"] = prependPath(dirname(nodePath), env["PATH"]);
+
+  return env;
 };
 
 export const runNpmInstall = async ({
@@ -40,8 +71,9 @@ export const runNpmInstall = async ({
     args.push("--ignore-scripts");
   }
 
-  await runCommand(nodeBinPath(paths, nodeVersion), [
-    npmBinPath(paths, nodeVersion),
-    ...args,
-  ]);
+  const nodePath = nodeBinPath(paths, nodeVersion);
+
+  await runCommand(nodePath, [npmBinPath(paths, nodeVersion), ...args], {
+    env: createManagedNodeEnvironment(nodePath),
+  });
 };
