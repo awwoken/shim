@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import type { ShimConfig } from "@/core/config";
-import type { RegistryBin, RegistryTool } from "@/core/models";
+import type { Registry, RegistryTool } from "@/core/models";
 import {
   findToolByPackageOrBin,
   loadRegistry,
@@ -20,27 +20,16 @@ import { resolveNpmPackage } from "./metadata";
 import { npmPackageRoot } from "./paths";
 
 const selectUpgradeTargets = (
-  tools: Record<string, RegistryTool>,
+  registry: Registry,
   packageOrBin: string | undefined,
-  bins: Record<string, RegistryBin>,
 ): RegistryTool[] => {
   if (packageOrBin === undefined) {
-    return Object.values(tools).filter(
+    return Object.values(registry.tools).filter(
       (tool) => tool.provider === NPM_PROVIDER_ID,
     );
   }
 
-  const bin = bins[packageOrBin];
-
-  if (bin !== undefined) {
-    const tool = tools[bin.toolId];
-
-    if (tool !== undefined && tool.provider === NPM_PROVIDER_ID) {
-      return [tool];
-    }
-  }
-
-  const tool = tools[`${NPM_PROVIDER_ID}:${packageOrBin}`];
+  const tool = findToolByPackageOrBin(registry, NPM_PROVIDER_ID, packageOrBin);
 
   if (tool === undefined) {
     throw new AppError(`No installed package or bin matched "${packageOrBin}"`);
@@ -92,11 +81,7 @@ export const upgradeNpmTools = async ({
   reporter,
 }: UpgradeNpmToolsInput): Promise<UpgradeResult[]> => {
   const registry = await loadRegistry(paths);
-  const tools = selectUpgradeTargets(
-    registry.tools,
-    packageOrBin,
-    registry.bins,
-  );
+  const tools = selectUpgradeTargets(registry, packageOrBin);
   const results: UpgradeResult[] = [];
 
   for (const tool of tools) {

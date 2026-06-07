@@ -111,17 +111,19 @@ export const findToolByPackageOrBin = (
   provider: ProviderId,
   packageOrBin: string,
 ): RegistryTool | undefined => {
-  const bin = registry.bins[packageOrBin];
+  const tool = registry.tools[getToolId(provider, packageOrBin)];
 
-  if (bin !== undefined) {
-    if (bin.provider !== provider) {
-      return undefined;
-    }
-
-    return registry.tools[bin.toolId];
+  if (tool !== undefined) {
+    return tool;
   }
 
-  return registry.tools[getToolId(provider, packageOrBin)];
+  const bin = registry.bins[packageOrBin];
+
+  if (bin === undefined || bin.provider !== provider) {
+    return undefined;
+  }
+
+  return registry.tools[bin.toolId];
 };
 
 type BinConflictInput = {
