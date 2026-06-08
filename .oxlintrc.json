@@ -65,6 +65,7 @@
     "import/no-self-import": "warn",
 
     // TypeScript safety
+    "typescript/no-deprecated": "error",
     "typescript/no-explicit-any": "error",
     "typescript/no-misused-promises": "error",
     "typescript/no-unnecessary-condition": "error",
