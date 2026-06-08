@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { npmToolPath } from "@/providers/npm/paths";
@@ -20,16 +20,19 @@ const SENTINEL_CONTENT = "sentinel\n";
 
 const writeSentinel = async (homeRoot: string): Promise<void> => {
   await mkdir(join(homeRoot, "bin"), { recursive: true });
-  await writeFile(join(homeRoot, "bin", "sentinel"), SENTINEL_CONTENT);
+  await Bun.write(join(homeRoot, "bin", "sentinel"), SENTINEL_CONTENT);
 };
 
 const expectSentinel = async (homeRoot: string): Promise<void> => {
-  expect(await readFile(join(homeRoot, "bin", "sentinel"), "utf8")).toBe(
+  expect(await Bun.file(join(homeRoot, "bin", "sentinel")).text()).toBe(
     SENTINEL_CONTENT,
   );
 };
 
-const startMaliciousVersionRegistry = (): { url: string; stop: () => void } => {
+const startMaliciousVersionRegistry = (): {
+  url: string;
+  stop: () => Promise<void>;
+} => {
   let registryUrl = "";
   const server = Bun.serve({
     port: 0,
@@ -60,8 +63,8 @@ const startMaliciousVersionRegistry = (): { url: string; stop: () => void } => {
 
   return {
     url: registryUrl,
-    stop: () => {
-      server.stop(true);
+    stop: async () => {
+      await server.stop(true);
     },
   };
 };
@@ -92,8 +95,8 @@ test("rejects traversal bootstrap version safely", async () => {
     expect(result.stderr).toContain("Invalid Node.js version override");
     await expectSentinel(home.root);
   } finally {
-    nodeMirror.stop();
-    registry.stop();
+    await nodeMirror.stop();
+    await registry.stop();
     await removeTestHome(home);
   }
 });
@@ -134,7 +137,7 @@ test("rejects traversal package names safely", async () => {
     expect(result.stderr).toContain("Invalid npm package name");
     await expectSentinel(home.root);
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
@@ -172,8 +175,8 @@ test("keeps home safe when registry reports traversal version", async () => {
     expectBinaryFailure(result);
     await expectSentinel(home.root);
   } finally {
-    nodeMirror.stop();
-    registry.stop();
+    await nodeMirror.stop();
+    await registry.stop();
     await removeTestHome(home);
   }
 });

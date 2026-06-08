@@ -90,7 +90,7 @@ test("parses shebang command before choosing shim kind", async () => {
     );
     expect(tsNodeMetadata.bins["ts-node-bin"]?.type).toBe(PATH_FALLBACK_SHIM);
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

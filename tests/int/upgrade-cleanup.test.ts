@@ -87,7 +87,7 @@ test("removes superseded package directories after upgrade", async () => {
     expect(after.tools["npm:cleanup-upgrade"]?.packageVersion).toBe("2.0.0");
     expect(await pathExists(oldToolPath ?? "")).toBe(false);
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

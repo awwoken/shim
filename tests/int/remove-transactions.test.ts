@@ -95,16 +95,14 @@ test("failed registry removal keeps installed files", async () => {
 
     expect(unchangedRegistry.tools["npm:remove-probe"]).toBeDefined();
   } finally {
-    await chmod(home.root, WRITABLE_DIRECTORY_MODE).catch(
-      async (caughtError) => {
-        if (caughtError instanceof Error && "code" in caughtError) {
-          return;
-        }
+    await chmod(home.root, WRITABLE_DIRECTORY_MODE).catch((caughtError) => {
+      if (caughtError instanceof Error && "code" in caughtError) {
+        return;
+      }
 
-        throw caughtError;
-      },
-    );
-    nodeMirror.stop();
+      throw caughtError;
+    });
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

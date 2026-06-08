@@ -107,7 +107,7 @@ test("preserves explicit runtime selection during upgrade", async () => {
     expect(tool?.runtime.version).toBe(OLD_NODE_VERSION);
     expect(tool?.installPolicy?.runtimeOverride).toBe(OLD_NODE_VERSION);
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
@@ -168,7 +168,7 @@ test("rejects upgraded engines incompatible with persisted runtime override", as
 
     expect(registry.tools["npm:engine-upgrade"]?.packageVersion).toBe("1.0.0");
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
@@ -210,7 +210,7 @@ test("uses latest lts runtime instead of bootstrap when engines are absent", asy
       NEW_NODE_VERSION,
     );
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

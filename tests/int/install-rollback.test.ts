@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { startLocalNodeMirror } from "../helpers/local-node-mirror";
@@ -107,7 +107,7 @@ test("rolls back promoted tool path and new shims when registry write fails", as
     expect(await pathExists(home.registry)).toBe(false);
   } finally {
     await restoreHomeWrites(home).catch(async () => {});
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
@@ -141,7 +141,7 @@ test("restores replaced tool directory after failed force reinstall", async () =
     const markerPath = join(toolPath ?? "", "marker.txt");
 
     expect(toolPath).toBeDefined();
-    await writeFile(markerPath, markerContent);
+    await Bun.write(markerPath, markerContent);
     await makeRegistryWritesFail(home);
 
     const reinstall = await runBinary({
@@ -152,7 +152,7 @@ test("restores replaced tool directory after failed force reinstall", async () =
     await restoreHomeWrites(home);
 
     expectBinaryFailure(reinstall);
-    expect(await readFile(markerPath, "utf8")).toBe(markerContent);
+    expect(await Bun.file(markerPath).text()).toBe(markerContent);
     expect(await pathExists(join(home.bin, "rollback-force"))).toBe(true);
 
     const unchangedRegistry = await readJsonFile<Registry>(home.registry);
@@ -162,7 +162,7 @@ test("restores replaced tool directory after failed force reinstall", async () =
     );
   } finally {
     await restoreHomeWrites(home).catch(async () => {});
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

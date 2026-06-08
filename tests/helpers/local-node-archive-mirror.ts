@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -74,7 +74,7 @@ const runTar = async (
     stderr: "pipe",
   });
   const [stderr, exitCode] = await Promise.all([
-    new Response(child.stderr).text(),
+    child.stderr.text(),
     child.exited,
   ]);
 
@@ -86,7 +86,7 @@ const runTar = async (
 };
 
 const fileSha256 = async (path: string): Promise<string> => {
-  const content = await readFile(path);
+  const content = Buffer.from(await Bun.file(path).arrayBuffer());
 
   return createHash("sha256").update(content).digest("hex");
 };
@@ -103,8 +103,8 @@ const prepareArchive = async (
   const hostNpmCli = await findHostNpmCli();
 
   await mkdir(binPath, { recursive: true });
-  await writeFile(join(binPath, "node"), nodeWrapperSource(hostNode));
-  await writeFile(join(binPath, "npm"), npmWrapperSource(hostNode, hostNpmCli));
+  await Bun.write(join(binPath, "node"), nodeWrapperSource(hostNode));
+  await Bun.write(join(binPath, "npm"), npmWrapperSource(hostNode, hostNpmCli));
   await chmod(join(binPath, "node"), EXECUTABLE_FILE_MODE);
   await chmod(join(binPath, "npm"), EXECUTABLE_FILE_MODE);
   await runTar(archivePath, root, rootName);
@@ -126,7 +126,7 @@ export const startLocalNodeArchiveMirror = async ({
   const archive = await prepareArchive(root, version);
   const server = Bun.serve({
     port: 0,
-    fetch: async (request) => {
+    fetch: (request) => {
       const url = new URL(request.url);
 
       if (url.pathname === "/index.json") {
@@ -138,7 +138,7 @@ export const startLocalNodeArchiveMirror = async ({
       }
 
       if (url.pathname === `/v${version}/${archive.archiveName}`) {
-        return new Response(await readFile(archive.archivePath));
+        return new Response(Bun.file(archive.archivePath));
       }
 
       return new Response("not found", { status: 404 });
@@ -149,7 +149,7 @@ export const startLocalNodeArchiveMirror = async ({
     url: server.url.toString().replace(/\/$/u, ""),
     archiveName: archive.archiveName,
     stop: async () => {
-      server.stop(true);
+      await server.stop(true);
       await rm(root, { force: true, recursive: true });
     },
   };

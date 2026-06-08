@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFile, realpath } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 
 import { startLocalNodeMirror } from "../helpers/local-node-mirror";
@@ -31,8 +31,8 @@ const runExecutable = async (
     stderr: "pipe",
   });
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
+    child.stdout.text(),
+    child.stderr.text(),
     child.exited,
   ]);
 
@@ -94,7 +94,7 @@ test("uses managed node path for npm scripts and direct shims", async () => {
       }),
     );
 
-    expect(await realpath(await readFile(installProbe, "utf8"))).toBe(
+    expect(await realpath(await Bun.file(installProbe).text())).toBe(
       await realpath(join(managedBin, "node")),
     );
 
@@ -103,9 +103,9 @@ test("uses managed node path for npm scripts and direct shims", async () => {
       SHIM_TEST_PROBE: shimProbe,
     });
 
-    expect(firstPathEntry(await readFile(shimProbe, "utf8"))).toBe(managedBin);
+    expect(firstPathEntry(await Bun.file(shimProbe).text())).toBe(managedBin);
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

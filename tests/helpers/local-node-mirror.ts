@@ -1,6 +1,6 @@
 export type LocalNodeMirror = {
   url: string;
-  stop: () => void;
+  stop: () => Promise<void>;
 };
 
 type LocalNodeMirrorInput = {
@@ -30,8 +30,8 @@ export const startLocalNodeMirror = ({
 
   return {
     url: server.url.toString().replace(/\/$/u, ""),
-    stop: () => {
-      server.stop(true);
+    stop: async () => {
+      await server.stop(true);
     },
   };
 };

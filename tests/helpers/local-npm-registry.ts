@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -77,7 +77,7 @@ const runTar = async (archivePath: string, cwd: string): Promise<void> => {
     stderr: "pipe",
   });
   const [stderr, exitCode] = await Promise.all([
-    new Response(child.stderr).text(),
+    child.stderr.text(),
     child.exited,
   ]);
 
@@ -89,7 +89,7 @@ const runTar = async (archivePath: string, cwd: string): Promise<void> => {
 };
 
 const fileSha1 = async (path: string): Promise<string> => {
-  const content = await readFile(path);
+  const content = Buffer.from(await Bun.file(path).arrayBuffer());
 
   return createHash("sha1").update(content).digest("hex");
 };
@@ -109,7 +109,7 @@ const preparePackage = async (
     const body = bin.body ?? defaultBinBody(bin.name, fixture.version);
 
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, `${bin.shebang ?? "#!/usr/bin/env node"}\n${body}`);
+    await Bun.write(path, `${bin.shebang ?? "#!/usr/bin/env node"}\n${body}`);
     await chmod(path, EXECUTABLE_FILE_MODE);
   }
 
@@ -117,7 +117,7 @@ const preparePackage = async (
     const path = join(stagePath, file.path);
 
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, file.content);
+    await Bun.write(path, file.content);
   }
 
   await runTar(archivePath, join(stagePath, ".."));
@@ -171,10 +171,10 @@ const metadataFor = (
   });
 };
 
-const serveTarball = async (
+const serveTarball = (
   packages: PreparedPackage[],
   fileName: string,
-): Promise<Response> => {
+): Response => {
   const fixture = packages.find(
     (candidate) => packageTarballName(candidate) === fileName,
   );
@@ -183,7 +183,7 @@ const serveTarball = async (
     return new Response("not found", { status: 404 });
   }
 
-  return new Response(await readFile(fixture.tarballPath), {
+  return new Response(Bun.file(fixture.tarballPath), {
     headers: { "Content-Type": "application/octet-stream" },
   });
 };
@@ -208,12 +208,12 @@ export const startLocalNpmRegistry = async ({
   let registryUrl = "";
   const server = Bun.serve({
     port: 0,
-    fetch: async (request) => {
+    fetch: (request) => {
       const url = new URL(request.url);
       const path = trimLeadingSlash(decodeURIComponent(url.pathname));
 
       if (path.includes("/-/")) {
-        return await serveTarball(prepared, basename(path));
+        return serveTarball(prepared, basename(path));
       }
 
       return metadataFor(registryUrl, byName.get(path) ?? []);
@@ -225,7 +225,7 @@ export const startLocalNpmRegistry = async ({
   return {
     url: registryUrl,
     stop: async () => {
-      server.stop(true);
+      await server.stop(true);
       await rm(root, { force: true, recursive: true });
     },
   };

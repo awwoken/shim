@@ -48,8 +48,8 @@ export const runBinary = async ({
   });
 
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
+    child.stdout.text(),
+    child.stderr.text(),
     child.exited,
   ]);
 

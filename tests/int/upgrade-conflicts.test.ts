@@ -97,7 +97,7 @@ test("force install fully displaces previous bin owner", async () => {
     expect(nextRegistry.bins["tsserver"]?.toolId).toBe("npm:typescript");
     expect(await pathExists(previousToolPath ?? "")).toBe(false);
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
@@ -157,7 +157,7 @@ test("upgrade cannot take bins owned by another package", async () => {
     expect(registry.tools["npm:upgrade-target"]).toBeDefined();
     expect(registry.bins["shared-bin"]?.toolId).toBe("npm:bin-owner");
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
@@ -203,7 +203,7 @@ test("remove prefers package names over colliding bin aliases", async () => {
     expect(registry.tools["npm:typescript"]).toBeDefined();
     expect(registry.bins["tsc"]?.toolId).toBe("npm:typescript");
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
@@ -255,7 +255,7 @@ test("upgrade prefers package names over colliding bin aliases", async () => {
     expect(registry.tools["npm:tsc"]?.toolPath).toContain("2.0.0");
     expect(registry.bins["tsc"]?.toolId).toBe("npm:typescript");
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

@@ -1,4 +1,4 @@
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { TestHome } from "./test-home";
@@ -18,7 +18,7 @@ const commandLookup = async (command: string): Promise<CommandLookupResult> => {
     stderr: "pipe",
   });
   const [stdout, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
+    child.stdout.text(),
     child.exited,
   ]);
 
@@ -44,8 +44,8 @@ export const findHostNpmCli = async (): Promise<string> => {
     stderr: "pipe",
   });
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
+    child.stdout.text(),
+    child.stderr.text(),
     child.exited,
   ]);
 
@@ -87,8 +87,8 @@ export const preseedManagedRuntime = async (
   const npmPath = join(runtimeBin, "npm");
 
   await mkdir(runtimeBin, { recursive: true });
-  await writeFile(nodePath, nodeWrapperSource(hostNode));
-  await writeFile(npmPath, npmWrapperSource(hostNode, hostNpmCli));
+  await Bun.write(nodePath, nodeWrapperSource(hostNode));
+  await Bun.write(npmPath, npmWrapperSource(hostNode, hostNpmCli));
   await chmod(nodePath, EXECUTABLE_FILE_MODE);
   await chmod(npmPath, EXECUTABLE_FILE_MODE);
 };

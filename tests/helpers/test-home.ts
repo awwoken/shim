@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,9 +40,9 @@ export const writeJsonFile = async (
   path: string,
   value: unknown,
 ): Promise<void> => {
-  await writeFile(path, `${JSON.stringify(value, null, JSON_INDENT_SPACES)}\n`);
+  await Bun.write(path, `${JSON.stringify(value, null, JSON_INDENT_SPACES)}\n`);
 };
 
 export const readJsonFile = async <T>(path: string): Promise<T> => {
-  return JSON.parse(await readFile(path, "utf8")) as T;
+  return (await Bun.file(path).json()) as T;
 };

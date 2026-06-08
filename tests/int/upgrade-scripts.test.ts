@@ -103,7 +103,7 @@ test("preserves ignore-scripts policy during upgrade", async () => {
     ).toBe(true);
     expect(await pathExists(scriptProbe)).toBe(false);
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }

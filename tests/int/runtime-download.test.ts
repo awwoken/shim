@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { startLocalNodeArchiveMirror } from "../helpers/local-node-archive-mirror";
@@ -64,7 +64,7 @@ test("replaces incomplete managed runtime directories", async () => {
     const runtimeBin = join(home.runtimes, "node", NODE_VERSION, "bin");
 
     await mkdir(runtimeBin, { recursive: true });
-    await writeFile(join(runtimeBin, "node"), "#!/bin/sh\nexit 1\n");
+    await Bun.write(join(runtimeBin, "node"), "#!/bin/sh\nexit 1\n");
 
     expectBinarySuccess(
       await runBinary({
@@ -103,7 +103,7 @@ test("redownloads corrupt cached node archives", async () => {
     const cachePath = join(home.cache, "node", nodeMirror.archiveName);
 
     await mkdir(join(home.cache, "node"), { recursive: true });
-    await writeFile(cachePath, "corrupt archive");
+    await Bun.write(cachePath, "corrupt archive");
 
     expectBinarySuccess(
       await runBinary({
@@ -112,7 +112,7 @@ test("redownloads corrupt cached node archives", async () => {
       }),
     );
 
-    expect(await readFile(cachePath, "utf8")).not.toBe("corrupt archive");
+    expect(await Bun.file(cachePath).text()).not.toBe("corrupt archive");
   } finally {
     await nodeMirror.stop();
     await npmRegistry.stop();

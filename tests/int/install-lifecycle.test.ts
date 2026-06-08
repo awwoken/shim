@@ -17,8 +17,8 @@ const EXIT_SUCCESS = 0;
 const runExecutable = async (path: string): Promise<string> => {
   const child = Bun.spawn([path], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
+    child.stdout.text(),
+    child.stderr.text(),
     child.exited,
   ]);
 
@@ -87,7 +87,7 @@ test("installs executes lists resolves removes fixture package", async () => {
     expectBinarySuccess(remove);
     expect(remove.stdout).toContain("Removed fixture-cli@1.0.0");
   } finally {
-    nodeMirror.stop();
+    await nodeMirror.stop();
     await npmRegistry.stop();
     await removeTestHome(home);
   }
