@@ -1,15 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
-import {
-  access,
-  chmod,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { access, chmod, mkdir, rename, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import {
@@ -70,9 +61,7 @@ export const readJsonFile = async <T>(path: string): Promise<T | undefined> => {
     return undefined;
   }
 
-  const content = await readFile(path, "utf8");
-
-  return JSON.parse(content) as T;
+  return (await Bun.file(path).json()) as T;
 };
 
 export const writeFileAtomic = async (
@@ -82,7 +71,7 @@ export const writeFileAtomic = async (
   await ensureDir(dirname(path));
 
   const temporaryPath = `${dirname(path)}/.${randomUUID()}.tmp`;
-  await writeFile(temporaryPath, content);
+  await Bun.write(temporaryPath, content);
   await rename(temporaryPath, path);
 };
 
@@ -97,7 +86,7 @@ export const writeJsonAtomic = async (
 };
 
 export const sha256File = async (path: string): Promise<string> => {
-  const content = await readFile(path);
+  const content = Buffer.from(await Bun.file(path).arrayBuffer());
 
   return createHash("sha256").update(content).digest("hex");
 };
