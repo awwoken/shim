@@ -86,7 +86,7 @@ export const runShimWithShellPrelude = async ({
     [
       "sh",
       "-c",
-      `${shellPrelude}; exec "$1" src/index.ts "$@"`,
+      `${shellPrelude}; bun_executable=$1; shift; exec "$bun_executable" src/index.ts "$@"`,
       "shim-test",
       BUN_EXECUTABLE,
       ...args,

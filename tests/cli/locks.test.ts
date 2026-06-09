@@ -46,6 +46,7 @@ test("cleans half-created lock after owner write failure", async () => {
     });
 
     expectFailure(failedRemove);
+    expect(failedRemove.stderr).toContain("EACCES");
     expect(await pathExists(join(home.locks, "mutation.lock"))).toBe(false);
 
     const laterRemove = await runShim({
