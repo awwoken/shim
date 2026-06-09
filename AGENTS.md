@@ -62,6 +62,12 @@ Guidelines:
 - Do not create meaningless constants only to appease lint rules.
 - Preserve clear dependency direction: `cli` calls into `core`/`providers`; providers may use `core`, `runtimes`, and `support`; `support` should not depend on product modules.
 
+When adding code, keep the call site readable first:
+
+- If setup, cleanup, or validation logic repeats across files, move it to the nearest focused support module.
+- Prefer domain-named helpers over mechanical helpers. For example, use `expectBinOwner` instead of repeated raw JSON inspection.
+- Every abstraction should make the behavior easier to read where it is used.
+
 ## Imports and aliases
 
 Use the single project alias:
@@ -102,7 +108,9 @@ bun run fmt:check
 bun run lint
 bun run typecheck
 bun run build
-bun test
+bun run test
+bun run test:int
+bun run test:smoke
 ```
 
 ## TypeScript guidance
@@ -170,18 +178,66 @@ Let `oxfmt` own formatting and import ordering. Do not hand-format around it.
 
 If alias or import grouping behavior changes, update formatter configuration intentionally and verify with `bun run fmt:check`.
 
+## Testing guidance
+
+Prefer high-level behavior tests while the internal structure is still evolving. Tests should read like behavior specifications: imports first, then `test(...)` calls.
+
+Test tiers:
+
+- `bun run test` — fast CLI tests that avoid network and real package installs.
+- `bun run test:int` — compiled-binary integration tests using temporary `SHIM_HOME`, local HTTP fixtures, and local npm tarballs.
+- `bun run test:smoke` — real npm/Node lifecycle smoke test for release confidence.
+
+Test structure:
+
+- Keep test files focused on scenarios and expectations.
+- Avoid file-local setup helpers, ad-hoc constants, server fixtures, registry shape types, or path utilities between imports and tests.
+- Put reusable test infrastructure under `tests/support/`, grouped by responsibility:
+  - `assertions/` — domain assertions such as registry state, filesystem state, and shim metadata.
+  - `fixtures/` — package, config, and test data builders.
+  - `harness/` — lifecycle orchestration such as temp homes, local registries, runtime preseeding, and cleanup.
+  - `servers/` — local HTTP/npm/node fixture servers.
+  - `process/` — command execution helpers.
+  - `filesystem/` — temp home and filesystem helpers.
+- Prefer high-level assertions such as `expectToolInstalled(...)` or `expectBinOwner(...)` over repeated raw registry JSON inspection.
+- Prefer harness helpers such as `withNpmShimHome(...)` over repeated `try/finally` setup in individual tests.
+- Keep scenario-specific weirdness, such as malicious registries or path traversal fixtures, in named support modules.
+- Do not hide the behavior being tested behind an overly clever DSL. Test bodies should still show the command sequence and expected outcome clearly.
+
+Regression policy:
+
+- Every important bug or review finding that gets fixed should get a direct regression test in the same change.
+- Important issues include safety, data loss, registry consistency, path traversal, runtime isolation, rollback, locking, upgrade policy, and wrong-tool execution/removal bugs.
+- Prefer a compiled-binary `tests/int/` test for install, remove, upgrade, shim, runtime, registry transaction, or provider behavior.
+- Use `tests/cli/` for fast command behavior that does not require real installs.
+- Use `tests/smoke/` only for real external-network lifecycle checks.
+- Do not rely only on a manual smoke test for a fixed correctness or safety issue unless deterministic coverage is impractical; if so, document the tradeoff.
+
 ## Validation before finishing changes
 
 For normal code changes, run:
 
 ```sh
+bun run test
 bun run fmt:check
 bun run lint
 bun run typecheck
 bun run build
 ```
 
-For user-visible CLI behavior changes, run an isolated smoke test with a temporary home directory. The smoke test should cover the relevant lifecycle, such as:
+For install, remove, upgrade, provider, runtime, shim, registry, lock, or rollback behavior changes, also run:
+
+```sh
+bun run test:int
+```
+
+For user-visible CLI lifecycle changes or release validation, run an isolated smoke test with a temporary home directory:
+
+```sh
+bun run test:smoke
+```
+
+Smoke coverage should include the relevant lifecycle, such as:
 
 - install or create a managed tool
 - list or inspect the managed state

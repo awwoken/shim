@@ -1,9 +1,11 @@
-import { mkdir, rm } from "node:fs/promises";
+import { chmod, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { AppError } from "@/support/errors";
 import { ensureDir, writeJsonAtomic } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
+
+const LOCK_DIRECTORY_CLEANUP_MODE = 0o700;
 
 export type LockHandle = {
   release: () => Promise<void>;
@@ -35,6 +37,7 @@ export const acquireMutationLock = async (
       createdAt: new Date().toISOString(),
     });
   } catch (error) {
+    await chmod(lockPath, LOCK_DIRECTORY_CLEANUP_MODE).catch(() => {});
     await rm(lockPath, { force: true, recursive: true });
 
     throw error;

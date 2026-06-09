@@ -85,7 +85,7 @@ export const upsertTool = (
       toolId: tool.id,
       packageName: tool.packageName,
       packageVersion: tool.packageVersion,
-      shimPath: `${binName}`,
+      shimPath: binName,
     };
   }
 

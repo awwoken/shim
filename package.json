@@ -9,12 +9,14 @@
   "scripts": {
     "dev": "bun src/index.ts",
     "build": "bun build src/index.ts --compile --minify --outfile build/shim",
-    "test": "bun test",
+    "test": "bun test tests/cli",
+    "test:int": "bun run build && bun test tests/int",
+    "test:smoke": "bun tests/smoke/npm-lifecycle.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "lint": "oxlint --format=unix",
-    "lint:fix": "oxlint --format=unix --fix"
+    "lint": "oxlint --type-aware --format=unix",
+    "lint:fix": "oxlint --type-aware --format=unix --fix"
   },
   "dependencies": {
     "commander": "^14.0.2",
@@ -29,6 +31,7 @@
     "@typescript/native-preview": "beta",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.30.0",
+    "oxlint-tsgolint": "^0.23.0",
     "typescript": "^5.9.3"
   },
   "engines": {
