@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { expectFailure, runShim } from "../helpers/run-shim";
-import { createTestHome, removeTestHome } from "../helpers/test-home";
+import {
+  createTestHome,
+  removeTestHome,
+} from "../support/filesystem/test-home";
+import { expectFailure, runShim } from "../support/process/run-shim";
 
 test("reports missing package", async () => {
   const home = await createTestHome();

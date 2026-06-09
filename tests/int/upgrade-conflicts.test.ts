@@ -1,262 +1,120 @@
 import { expect, test } from "bun:test";
-import { access } from "node:fs/promises";
 
-import { startLocalNodeMirror } from "../helpers/local-node-mirror";
-import { startLocalNpmRegistry } from "../helpers/local-npm-registry";
-import { preseedManagedRuntime } from "../helpers/preseed-runtime";
-import { expectBinarySuccess, runBinary } from "../helpers/run-binary";
 import {
-  createTestHome,
-  readJsonFile,
-  removeTestHome,
-  writeJsonFile,
-} from "../helpers/test-home";
-
-const NODE_VERSION = "22.11.0";
-const EXIT_SUCCESS = 0;
-
-type Registry = {
-  tools: Record<string, { toolPath: string }>;
-  bins: Record<string, { toolId: string }>;
-};
-
-const pathExists = async (path: string): Promise<boolean> => {
-  try {
-    await access(path);
-
-    return true;
-  } catch (caughtError) {
-    if (caughtError instanceof Error && "code" in caughtError) {
-      return false;
-    }
-
-    throw caughtError;
-  }
-};
-
-const configureHome = async (
-  home: Awaited<ReturnType<typeof createTestHome>>,
-  registryUrl: string,
-  mirrorUrl: string,
-): Promise<void> => {
-  await preseedManagedRuntime(home, NODE_VERSION);
-  await writeJsonFile(home.config, {
-    providers: { npm: { registry: registryUrl } },
-    runtimes: {
-      node: {
-        bootstrapVersion: NODE_VERSION,
-        mirror: mirrorUrl,
-      },
-    },
-  });
-};
+  expectPathExists,
+  expectPathMissing,
+} from "../support/assertions/filesystem";
+import {
+  expectBinOwner,
+  expectRegistryToolPath,
+  expectToolInstalled,
+  expectToolMissing,
+  registryToolPath,
+} from "../support/assertions/registry";
+import { npmPackageWithBins } from "../support/fixtures/npm-package";
+import { withNpmShimHome } from "../support/harness/npm-shim-home";
+import {
+  expectBinaryFailure,
+  expectBinarySuccess,
+} from "../support/process/run-binary";
 
 test("force install fully displaces previous bin owner", async () => {
-  const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "tsc",
-        version: "2.0.4",
-        bins: [{ name: "tsc" }],
-      },
-      {
-        name: "typescript",
-        version: "5.9.3",
-        bins: [{ name: "tsc" }, { name: "tsserver" }],
-      },
-    ],
-  });
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackageWithBins("tsc", "2.0.4", ["tsc"]),
+        npmPackageWithBins("typescript", "5.9.3", ["tsc", "tsserver"]),
+      ],
+    },
+    async ({ home, shim }) => {
+      expectBinarySuccess(await shim.install("tsc@2.0.4"));
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
+      const previousToolPath = await expectRegistryToolPath(
+        home.registry,
+        "npm:tsc",
+      );
 
-    expectBinarySuccess(
-      await runBinary({ home: home.root, args: ["install", "tsc@2.0.4"] }),
-    );
+      await expectPathExists(previousToolPath);
 
-    const previousRegistry = await readJsonFile<Registry>(home.registry);
-    const previousToolPath = previousRegistry.tools["npm:tsc"]?.toolPath;
+      expectBinarySuccess(await shim.install("typescript@5.9.3", "--force"));
 
-    expect(previousToolPath).toBeDefined();
-    expect(await pathExists(previousToolPath ?? "")).toBe(true);
-
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "typescript@5.9.3", "--force"],
-      }),
-    );
-
-    const nextRegistry = await readJsonFile<Registry>(home.registry);
-
-    expect(nextRegistry.tools["npm:tsc"]).toBeUndefined();
-    expect(nextRegistry.tools["npm:typescript"]).toBeDefined();
-    expect(nextRegistry.bins["tsc"]?.toolId).toBe("npm:typescript");
-    expect(nextRegistry.bins["tsserver"]?.toolId).toBe("npm:typescript");
-    expect(await pathExists(previousToolPath ?? "")).toBe(false);
-  } finally {
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+      await expectToolMissing(home.registry, "npm:tsc");
+      await expectToolInstalled(home.registry, "npm:typescript");
+      await expectBinOwner(home.registry, "tsc", "npm:typescript");
+      await expectBinOwner(home.registry, "tsserver", "npm:typescript");
+      await expectPathMissing(previousToolPath);
+    },
+  );
 });
 
 test("upgrade cannot take bins owned by another package", async () => {
-  const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "bin-owner",
-        version: "1.0.0",
-        bins: [{ name: "shared-bin" }],
-      },
-      {
-        name: "upgrade-target",
-        version: "1.0.0",
-        bins: [{ name: "upgrade-target" }],
-      },
-      {
-        name: "upgrade-target",
-        version: "2.0.0",
-        bins: [{ name: "upgrade-target" }, { name: "shared-bin" }],
-      },
-    ],
-  });
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackageWithBins("bin-owner", "1.0.0", ["shared-bin"]),
+        npmPackageWithBins("upgrade-target", "1.0.0", ["upgrade-target"]),
+        npmPackageWithBins("upgrade-target", "2.0.0", [
+          "upgrade-target",
+          "shared-bin",
+        ]),
+      ],
+    },
+    async ({ home, shim }) => {
+      expectBinarySuccess(await shim.install("bin-owner@1.0.0"));
+      expectBinarySuccess(await shim.install("upgrade-target@1.0.0"));
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
+      const upgrade = await shim.upgrade("upgrade-target");
 
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "bin-owner@1.0.0"],
-      }),
-    );
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "upgrade-target@1.0.0"],
-      }),
-    );
-
-    const upgrade = await runBinary({
-      home: home.root,
-      args: ["upgrade", "upgrade-target"],
-    });
-
-    expect(upgrade.exitCode).not.toBe(EXIT_SUCCESS);
-    expect(upgrade.stderr).toContain(
-      'Bin "shared-bin" is already installed by bin-owner@1.0.0',
-    );
-
-    const registry = await readJsonFile<Registry>(home.registry);
-
-    expect(registry.tools["npm:upgrade-target"]).toBeDefined();
-    expect(registry.bins["shared-bin"]?.toolId).toBe("npm:bin-owner");
-  } finally {
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+      expectBinaryFailure(upgrade);
+      expect(upgrade.stderr).toContain(
+        'Bin "shared-bin" is already installed by bin-owner@1.0.0',
+      );
+      await expectToolInstalled(home.registry, "npm:upgrade-target");
+      await expectBinOwner(home.registry, "shared-bin", "npm:bin-owner");
+    },
+  );
 });
 
 test("remove prefers package names over colliding bin aliases", async () => {
-  const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "tsc",
-        version: "1.0.0",
-        bins: [{ name: "tsc-package" }],
-      },
-      {
-        name: "typescript",
-        version: "5.9.3",
-        bins: [{ name: "tsc" }],
-      },
-    ],
-  });
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackageWithBins("tsc", "1.0.0", ["tsc-package"]),
+        npmPackageWithBins("typescript", "5.9.3", ["tsc"]),
+      ],
+    },
+    async ({ home, shim }) => {
+      expectBinarySuccess(await shim.install("tsc@1.0.0"));
+      expectBinarySuccess(await shim.install("typescript@5.9.3"));
+      expectBinarySuccess(await shim.remove("npm:tsc"));
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
-
-    expectBinarySuccess(
-      await runBinary({ home: home.root, args: ["install", "tsc@1.0.0"] }),
-    );
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "typescript@5.9.3"],
-      }),
-    );
-    expectBinarySuccess(
-      await runBinary({ home: home.root, args: ["remove", "npm:tsc"] }),
-    );
-
-    const registry = await readJsonFile<Registry>(home.registry);
-
-    expect(registry.tools["npm:tsc"]).toBeUndefined();
-    expect(registry.tools["npm:typescript"]).toBeDefined();
-    expect(registry.bins["tsc"]?.toolId).toBe("npm:typescript");
-  } finally {
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+      await expectToolMissing(home.registry, "npm:tsc");
+      await expectToolInstalled(home.registry, "npm:typescript");
+      await expectBinOwner(home.registry, "tsc", "npm:typescript");
+    },
+  );
 });
 
 test("upgrade prefers package names over colliding bin aliases", async () => {
-  const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "tsc",
-        version: "1.0.0",
-        bins: [{ name: "tsc-package" }],
-      },
-      {
-        name: "tsc",
-        version: "2.0.0",
-        bins: [{ name: "tsc-package" }],
-      },
-      {
-        name: "typescript",
-        version: "5.9.3",
-        bins: [{ name: "tsc" }],
-      },
-    ],
-  });
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackageWithBins("tsc", "1.0.0", ["tsc-package"]),
+        npmPackageWithBins("tsc", "2.0.0", ["tsc-package"]),
+        npmPackageWithBins("typescript", "5.9.3", ["tsc"]),
+      ],
+    },
+    async ({ home, shim }) => {
+      expectBinarySuccess(await shim.install("tsc@1.0.0"));
+      expectBinarySuccess(await shim.install("typescript@5.9.3"));
+      expectBinarySuccess(await shim.upgrade("npm:tsc"));
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
-
-    expectBinarySuccess(
-      await runBinary({ home: home.root, args: ["install", "tsc@1.0.0"] }),
-    );
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "typescript@5.9.3"],
-      }),
-    );
-    expectBinarySuccess(
-      await runBinary({ home: home.root, args: ["upgrade", "npm:tsc"] }),
-    );
-
-    const registry = await readJsonFile<Registry>(home.registry);
-
-    expect(registry.tools["npm:tsc"]).toBeDefined();
-    expect(registry.tools["npm:typescript"]).toBeDefined();
-    expect(registry.tools["npm:tsc"]?.toolPath).toContain("2.0.0");
-    expect(registry.bins["tsc"]?.toolId).toBe("npm:typescript");
-  } finally {
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+      await expectToolInstalled(home.registry, "npm:tsc");
+      await expectToolInstalled(home.registry, "npm:typescript");
+      expect(await registryToolPath(home.registry, "npm:tsc")).toContain(
+        "2.0.0",
+      );
+      await expectBinOwner(home.registry, "tsc", "npm:typescript");
+    },
+  );
 });

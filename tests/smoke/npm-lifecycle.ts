@@ -1,7 +1,10 @@
 import { join } from "node:path";
 
-import { expectSuccess, runShim } from "../helpers/run-shim";
-import { createTestHome, removeTestHome } from "../helpers/test-home";
+import {
+  createTestHome,
+  removeTestHome,
+} from "../support/filesystem/test-home";
+import { expectSuccess, runShim } from "../support/process/run-shim";
 
 const SMOKE_PACKAGE = "prettier@3.6.2";
 const SMOKE_BIN = "prettier";

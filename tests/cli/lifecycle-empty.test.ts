@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { expectSuccess, runShim } from "../helpers/run-shim";
-import { createTestHome, removeTestHome } from "../helpers/test-home";
+import {
+  createTestHome,
+  removeTestHome,
+} from "../support/filesystem/test-home";
+import { expectSuccess, runShim } from "../support/process/run-shim";
 
 test("lists empty state", async () => {
   const home = await createTestHome();

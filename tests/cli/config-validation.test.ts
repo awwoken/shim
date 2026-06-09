@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { expectFailure, runShim } from "../helpers/run-shim";
 import {
   createTestHome,
   removeTestHome,
   writeJsonFile,
-} from "../helpers/test-home";
+} from "../support/filesystem/test-home";
+import { expectFailure, runShim } from "../support/process/run-shim";
 
 test("rejects invalid config before install", async () => {
   const home = await createTestHome();

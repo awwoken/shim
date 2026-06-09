@@ -1,27 +1,17 @@
 import { expect, test } from "bun:test";
-import { access, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import { pathExists } from "../support/assertions/filesystem";
+import {
+  createTestHome,
+  removeTestHome,
+} from "../support/filesystem/test-home";
 import {
   expectFailure,
   runShim,
   runShimWithShellPrelude,
-} from "../helpers/run-shim";
-import { createTestHome, removeTestHome } from "../helpers/test-home";
-
-const pathExists = async (path: string): Promise<boolean> => {
-  try {
-    await access(path);
-
-    return true;
-  } catch (caughtError) {
-    if (caughtError instanceof Error && "code" in caughtError) {
-      return false;
-    }
-
-    throw caughtError;
-  }
-};
+} from "../support/process/run-shim";
 
 test("rejects command while mutation lock exists", async () => {
   const home = await createTestHome();

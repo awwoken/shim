@@ -1,89 +1,37 @@
 import { expect, test } from "bun:test";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 
 import { npmToolPath } from "@/providers/npm/paths";
 import { getShimPaths } from "@/support/paths";
 
-import { startLocalNodeMirror } from "../helpers/local-node-mirror";
-import { startLocalNpmRegistry } from "../helpers/local-npm-registry";
-import { preseedManagedRuntime } from "../helpers/preseed-runtime";
-import { expectBinaryFailure, runBinary } from "../helpers/run-binary";
+import { expectSentinel, writeSentinel } from "../support/filesystem/sentinel";
 import {
   createTestHome,
   removeTestHome,
-  writeJsonFile,
-} from "../helpers/test-home";
-
-const NODE_VERSION = "22.11.0";
-const SENTINEL_CONTENT = "sentinel\n";
-
-const writeSentinel = async (homeRoot: string): Promise<void> => {
-  await mkdir(join(homeRoot, "bin"), { recursive: true });
-  await Bun.write(join(homeRoot, "bin", "sentinel"), SENTINEL_CONTENT);
-};
-
-const expectSentinel = async (homeRoot: string): Promise<void> => {
-  expect(await Bun.file(join(homeRoot, "bin", "sentinel")).text()).toBe(
-    SENTINEL_CONTENT,
-  );
-};
-
-const startMaliciousVersionRegistry = (): {
-  url: string;
-  stop: () => Promise<void>;
-} => {
-  let registryUrl = "";
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      const url = new URL(request.url);
-
-      if (url.pathname === "/evil-version") {
-        return Response.json({
-          name: "evil-version",
-          "dist-tags": { latest: "../../bin" },
-          versions: {
-            "../../bin": {
-              name: "evil-version",
-              version: "../../bin",
-              dist: {
-                tarball: `${registryUrl}/evil-version/-/evil-version-evil.tgz`,
-              },
-            },
-          },
-        });
-      }
-
-      return new Response("not found", { status: 404 });
-    },
-  });
-
-  registryUrl = server.url.toString().replace(/\/$/u, "");
-
-  return {
-    url: registryUrl,
-    stop: async () => {
-      await server.stop(true);
-    },
-  };
-};
+} from "../support/filesystem/test-home";
+import { npmPackage } from "../support/fixtures/npm-package";
+import {
+  DEFAULT_NODE_VERSION,
+  configureNpmShimHome,
+  withNpmShimHome,
+} from "../support/harness/npm-shim-home";
+import { expectBinaryFailure, runBinary } from "../support/process/run-binary";
+import { startLocalNodeMirror } from "../support/servers/local-node-mirror";
+import { startMaliciousVersionRegistry } from "../support/servers/malicious-version-registry";
 
 test("rejects traversal bootstrap version safely", async () => {
   const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
+  const nodeMirror = startLocalNodeMirror({ versions: [DEFAULT_NODE_VERSION] });
   const registry = startMaliciousVersionRegistry();
 
   try {
     await writeSentinel(home.root);
-    await writeJsonFile(home.config, {
-      providers: { npm: { registry: registry.url } },
-      runtimes: {
-        node: {
-          bootstrapVersion: "../../bin",
-          mirror: nodeMirror.url,
-        },
-      },
+    await configureNpmShimHome({
+      home,
+      registryUrl: registry.url,
+      mirrorUrl: nodeMirror.url,
+      nodeVersions: [DEFAULT_NODE_VERSION],
+      bootstrapVersion: "../../bin",
+      preseedRuntime: false,
     });
 
     const result = await runBinary({
@@ -102,45 +50,25 @@ test("rejects traversal bootstrap version safely", async () => {
 });
 
 test("rejects traversal package names safely", async () => {
-  const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "evil-name",
-        metadataName: "../../outside",
-        version: "1.0.0",
-        bins: [{ name: "evil-name" }],
-      },
-    ],
-  });
-
-  try {
-    await preseedManagedRuntime(home, NODE_VERSION);
-    await writeSentinel(home.root);
-    await writeJsonFile(home.config, {
-      providers: { npm: { registry: npmRegistry.url } },
-      runtimes: {
-        node: {
-          bootstrapVersion: NODE_VERSION,
-          mirror: nodeMirror.url,
+  await withNpmShimHome(
+    {
+      packages: [
+        {
+          ...npmPackage("evil-name", "1.0.0"),
+          metadataName: "../../outside",
         },
-      },
-    });
+      ],
+    },
+    async ({ home, shim }) => {
+      await writeSentinel(home.root);
 
-    const result = await runBinary({
-      home: home.root,
-      args: ["install", "evil-name@1.0.0"],
-    });
+      const result = await shim.install("evil-name@1.0.0");
 
-    expectBinaryFailure(result);
-    expect(result.stderr).toContain("Invalid npm package name");
-    await expectSentinel(home.root);
-  } finally {
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+      expectBinaryFailure(result);
+      expect(result.stderr).toContain("Invalid npm package name");
+      await expectSentinel(home.root);
+    },
+  );
 });
 
 test("rejects traversal package versions before path construction", () => {
@@ -151,20 +79,16 @@ test("rejects traversal package versions before path construction", () => {
 
 test("keeps home safe when registry reports traversal version", async () => {
   const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
+  const nodeMirror = startLocalNodeMirror({ versions: [DEFAULT_NODE_VERSION] });
   const registry = startMaliciousVersionRegistry();
 
   try {
-    await preseedManagedRuntime(home, NODE_VERSION);
     await writeSentinel(home.root);
-    await writeJsonFile(home.config, {
-      providers: { npm: { registry: registry.url } },
-      runtimes: {
-        node: {
-          bootstrapVersion: NODE_VERSION,
-          mirror: nodeMirror.url,
-        },
-      },
+    await configureNpmShimHome({
+      home,
+      registryUrl: registry.url,
+      mirrorUrl: nodeMirror.url,
+      nodeVersions: [DEFAULT_NODE_VERSION],
     });
 
     const result = await runBinary({

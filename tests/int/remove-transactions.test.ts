@@ -1,109 +1,53 @@
 import { expect, test } from "bun:test";
-import { access, chmod } from "node:fs/promises";
 import { join } from "node:path";
 
-import { startLocalNodeMirror } from "../helpers/local-node-mirror";
-import { startLocalNpmRegistry } from "../helpers/local-npm-registry";
-import { preseedManagedRuntime } from "../helpers/preseed-runtime";
+import { expectPathExists } from "../support/assertions/filesystem";
+import {
+  expectRegistryToolPath,
+  readRegistry,
+} from "../support/assertions/registry";
+import {
+  makeRegistryWritesFail,
+  restoreHomeWrites,
+  restoreHomeWritesIfPresent,
+} from "../support/filesystem/home-permissions";
+import { npmPackage } from "../support/fixtures/npm-package";
+import { withNpmShimHome } from "../support/harness/npm-shim-home";
 import {
   expectBinaryFailure,
   expectBinarySuccess,
-  runBinary,
-} from "../helpers/run-binary";
-import {
-  createTestHome,
-  readJsonFile,
-  removeTestHome,
-  writeJsonFile,
-} from "../helpers/test-home";
-
-const NODE_VERSION = "22.11.0";
-const READONLY_DIRECTORY_MODE = 0o555;
-const WRITABLE_DIRECTORY_MODE = 0o755;
-
-type Registry = {
-  tools: Record<string, { toolPath: string }>;
-};
-
-const pathExists = async (path: string): Promise<boolean> => {
-  try {
-    await access(path);
-
-    return true;
-  } catch (caughtError) {
-    if (caughtError instanceof Error && "code" in caughtError) {
-      return false;
-    }
-
-    throw caughtError;
-  }
-};
+} from "../support/process/run-binary";
 
 test("failed registry removal keeps installed files", async () => {
-  const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "remove-probe",
-        version: "1.0.0",
-        bins: [{ name: "remove-probe" }],
-      },
-    ],
-  });
+  await withNpmShimHome(
+    { packages: [npmPackage("remove-probe", "1.0.0")] },
+    async ({ home, shim }) => {
+      try {
+        expectBinarySuccess(await shim.install("remove-probe@1.0.0"));
 
-  try {
-    await preseedManagedRuntime(home, NODE_VERSION);
-    await writeJsonFile(home.config, {
-      providers: { npm: { registry: npmRegistry.url } },
-      runtimes: {
-        node: {
-          bootstrapVersion: NODE_VERSION,
-          mirror: nodeMirror.url,
-        },
-      },
-    });
+        const toolPath = await expectRegistryToolPath(
+          home.registry,
+          "npm:remove-probe",
+        );
 
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "remove-probe@1.0.0"],
-      }),
-    );
+        await expectPathExists(join(home.bin, "remove-probe"));
+        await expectPathExists(toolPath);
+        await makeRegistryWritesFail(home);
 
-    const registry = await readJsonFile<Registry>(home.registry);
-    const toolPath = registry.tools["npm:remove-probe"]?.toolPath;
+        const failedRemove = await shim.remove("remove-probe");
 
-    expect(toolPath).toBeDefined();
-    expect(await pathExists(join(home.bin, "remove-probe"))).toBe(true);
-    expect(await pathExists(toolPath ?? "")).toBe(true);
+        await restoreHomeWrites(home);
 
-    await chmod(home.root, READONLY_DIRECTORY_MODE);
+        expectBinaryFailure(failedRemove);
+        await expectPathExists(join(home.bin, "remove-probe"));
+        await expectPathExists(toolPath);
 
-    const failedRemove = await runBinary({
-      home: home.root,
-      args: ["remove", "remove-probe"],
-    });
+        const unchangedRegistry = await readRegistry(home.registry);
 
-    await chmod(home.root, WRITABLE_DIRECTORY_MODE);
-
-    expectBinaryFailure(failedRemove);
-    expect(await pathExists(join(home.bin, "remove-probe"))).toBe(true);
-    expect(await pathExists(toolPath ?? "")).toBe(true);
-
-    const unchangedRegistry = await readJsonFile<Registry>(home.registry);
-
-    expect(unchangedRegistry.tools["npm:remove-probe"]).toBeDefined();
-  } finally {
-    await chmod(home.root, WRITABLE_DIRECTORY_MODE).catch((caughtError) => {
-      if (caughtError instanceof Error && "code" in caughtError) {
-        return;
+        expect(unchangedRegistry.tools["npm:remove-probe"]).toBeDefined();
+      } finally {
+        await restoreHomeWritesIfPresent(home);
       }
-
-      throw caughtError;
-    });
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+    },
+  );
 });

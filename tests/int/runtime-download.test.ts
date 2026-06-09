@@ -1,121 +1,48 @@
 import { expect, test } from "bun:test";
-import { access, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { startLocalNodeArchiveMirror } from "../helpers/local-node-archive-mirror";
-import { startLocalNpmRegistry } from "../helpers/local-npm-registry";
-import { expectBinarySuccess, runBinary } from "../helpers/run-binary";
-import {
-  createTestHome,
-  removeTestHome,
-  writeJsonFile,
-} from "../helpers/test-home";
-
-const NODE_VERSION = "22.11.0";
-
-const pathExists = async (path: string): Promise<boolean> => {
-  try {
-    await access(path);
-
-    return true;
-  } catch (caughtError) {
-    if (caughtError instanceof Error && "code" in caughtError) {
-      return false;
-    }
-
-    throw caughtError;
-  }
-};
-
-const configureHome = async (
-  home: Awaited<ReturnType<typeof createTestHome>>,
-  registryUrl: string,
-  mirrorUrl: string,
-): Promise<void> => {
-  await writeJsonFile(home.config, {
-    providers: { npm: { registry: registryUrl } },
-    runtimes: {
-      node: {
-        bootstrapVersion: NODE_VERSION,
-        mirror: mirrorUrl,
-      },
-    },
-  });
-};
+import { expectPathExists, pathExists } from "../support/assertions/filesystem";
+import { npmPackage } from "../support/fixtures/npm-package";
+import { withNpmArchiveShimHome } from "../support/harness/npm-archive-shim-home";
+import { DEFAULT_NODE_VERSION } from "../support/harness/npm-shim-home";
+import { expectBinarySuccess } from "../support/process/run-binary";
 
 test("replaces incomplete managed runtime directories", async () => {
-  const home = await createTestHome();
-  const nodeMirror = await startLocalNodeArchiveMirror({
-    version: NODE_VERSION,
-  });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "runtime-repair",
-        version: "1.0.0",
-        bins: [{ name: "runtime-repair" }],
-      },
-    ],
-  });
+  await withNpmArchiveShimHome(
+    { packages: [npmPackage("runtime-repair", "1.0.0")] },
+    async ({ home, shim }) => {
+      const runtimeBin = join(
+        home.runtimes,
+        "node",
+        DEFAULT_NODE_VERSION,
+        "bin",
+      );
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
+      await mkdir(runtimeBin, { recursive: true });
+      await Bun.write(join(runtimeBin, "node"), "#!/bin/sh\nexit 1\n");
 
-    const runtimeBin = join(home.runtimes, "node", NODE_VERSION, "bin");
+      expectBinarySuccess(await shim.install("runtime-repair@1.0.0"));
 
-    await mkdir(runtimeBin, { recursive: true });
-    await Bun.write(join(runtimeBin, "node"), "#!/bin/sh\nexit 1\n");
-
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "runtime-repair@1.0.0"],
-      }),
-    );
-
-    expect(await pathExists(join(runtimeBin, "node"))).toBe(true);
-    expect(await pathExists(join(runtimeBin, "npm"))).toBe(true);
-  } finally {
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+      await expectPathExists(join(runtimeBin, "node"));
+      await expectPathExists(join(runtimeBin, "npm"));
+    },
+  );
 });
 
 test("redownloads corrupt cached node archives", async () => {
-  const home = await createTestHome();
-  const nodeMirror = await startLocalNodeArchiveMirror({
-    version: NODE_VERSION,
-  });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "cache-repair",
-        version: "1.0.0",
-        bins: [{ name: "cache-repair" }],
-      },
-    ],
-  });
+  await withNpmArchiveShimHome(
+    { packages: [npmPackage("cache-repair", "1.0.0")] },
+    async ({ home, shim, archiveName }) => {
+      const cachePath = join(home.cache, "node", archiveName);
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
+      await mkdir(join(home.cache, "node"), { recursive: true });
+      await Bun.write(cachePath, "corrupt archive");
 
-    const cachePath = join(home.cache, "node", nodeMirror.archiveName);
+      expectBinarySuccess(await shim.install("cache-repair@1.0.0"));
 
-    await mkdir(join(home.cache, "node"), { recursive: true });
-    await Bun.write(cachePath, "corrupt archive");
-
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "cache-repair@1.0.0"],
-      }),
-    );
-
-    expect(await Bun.file(cachePath).text()).not.toBe("corrupt archive");
-  } finally {
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+      expect(await pathExists(cachePath)).toBe(true);
+      expect(await Bun.file(cachePath).text()).not.toBe("corrupt archive");
+    },
+  );
 });

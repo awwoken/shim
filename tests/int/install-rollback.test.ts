@@ -1,169 +1,83 @@
 import { expect, test } from "bun:test";
-import { access, chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { startLocalNodeMirror } from "../helpers/local-node-mirror";
-import { startLocalNpmRegistry } from "../helpers/local-npm-registry";
-import { preseedManagedRuntime } from "../helpers/preseed-runtime";
+import {
+  expectPathExists,
+  expectPathMissing,
+} from "../support/assertions/filesystem";
+import {
+  expectRegistryToolPath,
+  readRegistry,
+} from "../support/assertions/registry";
+import {
+  makeRegistryWritesFail,
+  restoreHomeWrites,
+  restoreHomeWritesIfPresent,
+} from "../support/filesystem/home-permissions";
+import { npmPackage } from "../support/fixtures/npm-package";
+import { withNpmShimHome } from "../support/harness/npm-shim-home";
 import {
   expectBinaryFailure,
   expectBinarySuccess,
-  runBinary,
-} from "../helpers/run-binary";
-import {
-  createTestHome,
-  readJsonFile,
-  removeTestHome,
-  writeJsonFile,
-} from "../helpers/test-home";
-
-const NODE_VERSION = "22.11.0";
-const READONLY_DIRECTORY_MODE = 0o555;
-const WRITABLE_DIRECTORY_MODE = 0o755;
-
-type Registry = {
-  tools: Record<string, { toolPath: string }>;
-};
-
-const pathExists = async (path: string): Promise<boolean> => {
-  try {
-    await access(path);
-
-    return true;
-  } catch (caughtError) {
-    if (caughtError instanceof Error && "code" in caughtError) {
-      return false;
-    }
-
-    throw caughtError;
-  }
-};
-
-const configureHome = async (
-  home: Awaited<ReturnType<typeof createTestHome>>,
-  registryUrl: string,
-  mirrorUrl: string,
-): Promise<void> => {
-  await preseedManagedRuntime(home, NODE_VERSION);
-  await mkdir(home.root, { recursive: true });
-  await writeJsonFile(home.config, {
-    providers: { npm: { registry: registryUrl } },
-    runtimes: {
-      node: {
-        bootstrapVersion: NODE_VERSION,
-        mirror: mirrorUrl,
-      },
-    },
-  });
-};
-
-const makeRegistryWritesFail = async (
-  home: Awaited<ReturnType<typeof createTestHome>>,
-): Promise<void> => {
-  await mkdir(home.bin, { recursive: true });
-  await mkdir(home.cache, { recursive: true });
-  await mkdir(home.locks, { recursive: true });
-  await mkdir(home.runtimes, { recursive: true });
-  await mkdir(home.tmp, { recursive: true });
-  await mkdir(home.tools, { recursive: true });
-  await chmod(home.root, READONLY_DIRECTORY_MODE);
-};
-
-const restoreHomeWrites = async (
-  home: Awaited<ReturnType<typeof createTestHome>>,
-): Promise<void> => {
-  await chmod(home.root, WRITABLE_DIRECTORY_MODE);
-};
+} from "../support/process/run-binary";
 
 test("rolls back promoted tool path and new shims when registry write fails", async () => {
-  const home = await createTestHome();
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "rollback-new",
-        version: "1.0.0",
-        bins: [{ name: "rollback-new" }],
-      },
-    ],
-  });
+  await withNpmShimHome(
+    { packages: [npmPackage("rollback-new", "1.0.0")] },
+    async ({ home, shim }) => {
+      try {
+        await makeRegistryWritesFail(home);
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
-    await makeRegistryWritesFail(home);
+        const install = await shim.install("rollback-new@1.0.0");
 
-    const install = await runBinary({
-      home: home.root,
-      args: ["install", "rollback-new@1.0.0"],
-    });
+        await restoreHomeWrites(home);
 
-    await restoreHomeWrites(home);
-
-    expectBinaryFailure(install);
-    expect(await pathExists(join(home.bin, "rollback-new"))).toBe(false);
-    expect(
-      await pathExists(join(home.tools, "npm", "rollback-new", "1.0.0")),
-    ).toBe(false);
-    expect(await pathExists(home.registry)).toBe(false);
-  } finally {
-    await restoreHomeWrites(home).catch(async () => {});
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+        expectBinaryFailure(install);
+        await expectPathMissing(join(home.bin, "rollback-new"));
+        await expectPathMissing(
+          join(home.tools, "npm", "rollback-new", "1.0.0"),
+        );
+        await expectPathMissing(home.registry);
+      } finally {
+        await restoreHomeWritesIfPresent(home);
+      }
+    },
+  );
 });
 
 test("restores replaced tool directory after failed force reinstall", async () => {
-  const home = await createTestHome();
   const markerContent = "original tool marker\n";
-  const nodeMirror = startLocalNodeMirror({ versions: [NODE_VERSION] });
-  const npmRegistry = await startLocalNpmRegistry({
-    packages: [
-      {
-        name: "rollback-force",
-        version: "1.0.0",
-        bins: [{ name: "rollback-force" }],
-      },
-    ],
-  });
 
-  try {
-    await configureHome(home, npmRegistry.url, nodeMirror.url);
-    expectBinarySuccess(
-      await runBinary({
-        home: home.root,
-        args: ["install", "rollback-force@1.0.0"],
-      }),
-    );
+  await withNpmShimHome(
+    { packages: [npmPackage("rollback-force", "1.0.0")] },
+    async ({ home, shim }) => {
+      try {
+        expectBinarySuccess(await shim.install("rollback-force@1.0.0"));
 
-    const registry = await readJsonFile<Registry>(home.registry);
-    const toolPath = registry.tools["npm:rollback-force"]?.toolPath;
-    const markerPath = join(toolPath ?? "", "marker.txt");
+        const toolPath = await expectRegistryToolPath(
+          home.registry,
+          "npm:rollback-force",
+        );
+        const markerPath = join(toolPath, "marker.txt");
+        await Bun.write(markerPath, markerContent);
+        await makeRegistryWritesFail(home);
 
-    expect(toolPath).toBeDefined();
-    await Bun.write(markerPath, markerContent);
-    await makeRegistryWritesFail(home);
+        const reinstall = await shim.install("rollback-force@1.0.0", "--force");
 
-    const reinstall = await runBinary({
-      home: home.root,
-      args: ["install", "rollback-force@1.0.0", "--force"],
-    });
+        await restoreHomeWrites(home);
 
-    await restoreHomeWrites(home);
+        expectBinaryFailure(reinstall);
+        expect(await Bun.file(markerPath).text()).toBe(markerContent);
+        await expectPathExists(join(home.bin, "rollback-force"));
 
-    expectBinaryFailure(reinstall);
-    expect(await Bun.file(markerPath).text()).toBe(markerContent);
-    expect(await pathExists(join(home.bin, "rollback-force"))).toBe(true);
+        const unchangedRegistry = await readRegistry(home.registry);
 
-    const unchangedRegistry = await readJsonFile<Registry>(home.registry);
-
-    expect(unchangedRegistry.tools["npm:rollback-force"]?.toolPath).toBe(
-      toolPath,
-    );
-  } finally {
-    await restoreHomeWrites(home).catch(async () => {});
-    await nodeMirror.stop();
-    await npmRegistry.stop();
-    await removeTestHome(home);
-  }
+        expect(unchangedRegistry.tools["npm:rollback-force"]?.toolPath).toBe(
+          toolPath,
+        );
+      } finally {
+        await restoreHomeWritesIfPresent(home);
+      }
+    },
+  );
 });
