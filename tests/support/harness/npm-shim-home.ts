@@ -28,6 +28,7 @@ export type ShimCommands = {
     ...args: string[]
   ) => Promise<RunBinaryResult>;
   remove: (packageOrBin: string, ...args: string[]) => Promise<RunBinaryResult>;
+  prune: (...args: string[]) => Promise<RunBinaryResult>;
   upgrade: (
     packageOrBin?: string,
     ...args: string[]
@@ -68,6 +69,7 @@ export const createShimCommands = (home: TestHome): ShimCommands => {
       await run(["install", packageSpec, ...args], { env }),
     remove: async (packageOrBin, ...args) =>
       await run(["remove", packageOrBin, ...args]),
+    prune: async (...args) => await run(["prune", ...args]),
     upgrade: async (packageOrBin, ...args) =>
       await run(
         packageOrBin === undefined
