@@ -6,13 +6,15 @@ import { registerUpgradeCommand } from "@/cli/commands/upgrade";
 import { registerWhichCommand } from "@/cli/commands/which";
 import { Command } from "commander";
 
+import packageJson from "../../package.json";
+
 export const createProgram = (): Command => {
   const program = new Command();
 
   program
     .name("shim")
     .description("Install CLI tools with isolated managed runtimes.")
-    .version("0.0.1");
+    .version(packageJson.version);
 
   registerInstallCommand(program);
   registerRemoveCommand(program);
