@@ -1,0 +1,290 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish, such as v0.0.2
+        required: true
+        type: string
+      source_ref:
+        description: Source ref to build/publish, defaults to the tag and should only be used for release recovery
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAP_REPOSITORY: awwoken/homebrew-tap
+  FORMULA_PATH: Formula/shim.rb
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  SOURCE_REF: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Validate release inputs
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vX.Y.Z, got ${RELEASE_TAG}."
+            exit 1
+          fi
+
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "Missing HOMEBREW_TAP_TOKEN secret for updating ${TAP_REPOSITORY}."
+            exit 1
+          fi
+
+          echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: canary
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate source version
+        run: |
+          set -euo pipefail
+
+          PACKAGE_VERSION="$(bun -e 'console.log(require("./package.json").version)')"
+
+          if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+            echo "package.json version $PACKAGE_VERSION does not match release version $VERSION."
+            exit 1
+          fi
+
+      - name: Check formatting
+        run: bun run fmt:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Verify binary version
+        run: |
+          set -euo pipefail
+
+          BINARY_VERSION="$(build/shim --version)"
+
+          if [ "$BINARY_VERSION" != "$VERSION" ]; then
+            echo "Built binary version $BINARY_VERSION does not match release version $VERSION."
+            exit 1
+          fi
+
+      - name: Run CLI tests
+        run: bun run test
+
+      - name: Run int tests
+        run: bun run test:int
+
+      - name: Run smoke test
+        run: bun run test:smoke
+
+      - name: Build release artifacts
+        run: |
+          set -euo pipefail
+
+          rm -rf dist
+          mkdir -p \
+            dist/shim-darwin-arm64 \
+            dist/shim-darwin-x64 \
+            dist/shim-linux-arm64 \
+            dist/shim-linux-x64
+
+          bun build src/index.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/shim-darwin-arm64/shim
+          bun build src/index.ts --compile --minify --target=bun-darwin-x64 --outfile dist/shim-darwin-x64/shim
+          bun build src/index.ts --compile --minify --target=bun-linux-arm64 --outfile dist/shim-linux-arm64/shim
+          bun build src/index.ts --compile --minify --target=bun-linux-x64-baseline --outfile dist/shim-linux-x64/shim
+
+          tar -C dist/shim-darwin-arm64 -czf dist/shim-darwin-arm64.tar.gz shim
+          tar -C dist/shim-darwin-x64 -czf dist/shim-darwin-x64.tar.gz shim
+          tar -C dist/shim-linux-arm64 -czf dist/shim-linux-arm64.tar.gz shim
+          tar -C dist/shim-linux-x64 -czf dist/shim-linux-x64.tar.gz shim
+
+          sha256sum dist/*.tar.gz | sort -k2 > dist/checksums.txt
+          cat dist/checksums.txt
+
+      - name: Verify release artifact version
+        run: |
+          set -euo pipefail
+
+          BINARY_VERSION="$(dist/shim-linux-x64/shim --version)"
+
+          if [ "$BINARY_VERSION" != "$VERSION" ]; then
+            echo "Release artifact version $BINARY_VERSION does not match release version $VERSION."
+            exit 1
+          fi
+
+      - name: Collect artifact checksums
+        id: checksums
+        run: |
+          set -euo pipefail
+
+          checksum_for() {
+            local asset="$1"
+            awk -v asset="dist/${asset}" '$2 == asset { print $1 }' dist/checksums.txt
+          }
+
+          DARWIN_ARM64_SHA="$(checksum_for shim-darwin-arm64.tar.gz)"
+          DARWIN_X64_SHA="$(checksum_for shim-darwin-x64.tar.gz)"
+          LINUX_ARM64_SHA="$(checksum_for shim-linux-arm64.tar.gz)"
+          LINUX_X64_SHA="$(checksum_for shim-linux-x64.tar.gz)"
+
+          for checksum in "$DARWIN_ARM64_SHA" "$DARWIN_X64_SHA" "$LINUX_ARM64_SHA" "$LINUX_X64_SHA"; do
+            if [ -z "$checksum" ]; then
+              echo "Failed to collect every artifact checksum."
+              exit 1
+            fi
+          done
+
+          echo "darwin_arm64=$DARWIN_ARM64_SHA" >> "$GITHUB_OUTPUT"
+          echo "darwin_x64=$DARWIN_X64_SHA" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$LINUX_ARM64_SHA" >> "$GITHUB_OUTPUT"
+          echo "linux_x64=$LINUX_X64_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes "Release $RELEASE_TAG"
+            gh release upload "$RELEASE_TAG" \
+              dist/shim-darwin-arm64.tar.gz \
+              dist/shim-darwin-x64.tar.gz \
+              dist/shim-linux-arm64.tar.gz \
+              dist/shim-linux-x64.tar.gz \
+              dist/checksums.txt \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes "Release $RELEASE_TAG" \
+              dist/shim-darwin-arm64.tar.gz \
+              dist/shim-darwin-x64.tar.gz \
+              dist/shim-linux-arm64.tar.gz \
+              dist/shim-linux-x64.tar.gz \
+              dist/checksums.txt
+          fi
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          repository: ${{ env.TAP_REPOSITORY }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update Homebrew formula
+        env:
+          DARWIN_ARM64_SHA: ${{ steps.checksums.outputs.darwin_arm64 }}
+          DARWIN_X64_SHA: ${{ steps.checksums.outputs.darwin_x64 }}
+          LINUX_ARM64_SHA: ${{ steps.checksums.outputs.linux_arm64 }}
+          LINUX_X64_SHA: ${{ steps.checksums.outputs.linux_x64 }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "homebrew-tap/$(dirname "$FORMULA_PATH")"
+
+          cat > "homebrew-tap/$FORMULA_PATH" <<EOF
+          class Shim < Formula
+            desc "Install CLI tools with isolated managed runtimes"
+            homepage "https://github.com/${SOURCE_REPOSITORY}"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/${SOURCE_REPOSITORY}/releases/download/v#{version}/shim-darwin-arm64.tar.gz"
+                sha256 "${DARWIN_ARM64_SHA}"
+              else
+                url "https://github.com/${SOURCE_REPOSITORY}/releases/download/v#{version}/shim-darwin-x64.tar.gz"
+                sha256 "${DARWIN_X64_SHA}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/${SOURCE_REPOSITORY}/releases/download/v#{version}/shim-linux-arm64.tar.gz"
+                sha256 "${LINUX_ARM64_SHA}"
+              else
+                url "https://github.com/${SOURCE_REPOSITORY}/releases/download/v#{version}/shim-linux-x64.tar.gz"
+                sha256 "${LINUX_X64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "shim"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/shim --version")
+            end
+          end
+          EOF
+
+          ruby -c "homebrew-tap/$FORMULA_PATH"
+
+      - name: Commit Homebrew formula update
+        run: |
+          set -euo pipefail
+
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "$FORMULA_PATH"
+
+          if git diff --cached --quiet; then
+            echo "Homebrew formula is already up to date."
+            exit 0
+          fi
+
+          git commit -m "Update shim to ${RELEASE_TAG}"
+          git push
