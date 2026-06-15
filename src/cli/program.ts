@@ -1,6 +1,7 @@
 import { registerDoctorCommand } from "@/cli/commands/doctor";
 import { registerInstallCommand } from "@/cli/commands/install";
 import { registerListCommand } from "@/cli/commands/list";
+import { registerPruneCommand } from "@/cli/commands/prune";
 import { registerRemoveCommand } from "@/cli/commands/remove";
 import { registerUpgradeCommand } from "@/cli/commands/upgrade";
 import { registerWhichCommand } from "@/cli/commands/which";
@@ -19,6 +20,7 @@ export const createProgram = (): Command => {
   registerInstallCommand(program);
   registerRemoveCommand(program);
   registerListCommand(program);
+  registerPruneCommand(program);
   registerUpgradeCommand(program);
   registerDoctorCommand(program);
   registerWhichCommand(program);
