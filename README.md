@@ -10,19 +10,6 @@ The built-in provider is currently `npm`, backed by a managed `node` runtime.
 brew install awwoken/tap/shim
 ```
 
-For now, build from source:
-
-```sh
-bun install
-bun run build
-```
-
-Then use:
-
-```txt
-build/shim
-```
-
 Add the shim bin directory to `PATH`:
 
 ```sh
@@ -61,6 +48,13 @@ Upgrade tools:
 ```sh
 shim upgrade
 shim upgrade prettier
+```
+
+Preview and remove orphaned managed runtimes:
+
+```sh
+shim prune --dry-run
+shim prune --yes
 ```
 
 Check installation health:
@@ -117,6 +111,14 @@ Run from source:
 bun run dev -- <command>
 ```
 
+Build a local development binary:
+
+```sh
+bun install
+bun run build
+build/shim <command>
+```
+
 Common checks:
 
 ```sh
@@ -142,7 +144,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The `Release` workflow runs from pushed `v*` tags. It verifies the tag matches `package.json`, runs checks, builds macOS and Linux release archives, creates or updates the GitHub release, and updates `awwoken/homebrew-tap` with the new formula checksums.
+The `Release` workflow runs from pushed `v*` tags. It verifies the tag matches `package.json`, runs checks, creates or updates the GitHub release, and updates `awwoken/homebrew-tap` with the new formula checksums.
 
 Required repository secret:
 
