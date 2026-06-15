@@ -142,7 +142,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The `Release` workflow runs from pushed `v*` tags. It verifies the tag matches `package.json`, runs checks, builds macOS and Linux release archives, creates or updates the GitHub release, and updates `awwoken/homebrew-tap` with the new formula checksums. It can also be run manually with a tag for release recovery.
+The `Release` workflow runs from pushed `v*` tags. It verifies the tag matches `package.json`, runs checks, builds macOS and Linux release archives, creates or updates the GitHub release, and updates `awwoken/homebrew-tap` with the new formula checksums.
 
 Required repository secret:
 
