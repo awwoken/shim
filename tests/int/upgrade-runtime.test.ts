@@ -5,8 +5,14 @@ import {
   expectToolRuntimeOverride,
   expectToolVersion,
 } from "../support/assertions/registry";
+import {
+  createTestHome,
+  removeTestHome,
+} from "../support/filesystem/test-home";
 import { npmPackage } from "../support/fixtures/npm-package";
 import {
+  configureNpmShimHome,
+  createShimCommands,
   DEFAULT_NODE_VERSION,
   withNpmShimHome,
 } from "../support/harness/npm-shim-home";
@@ -14,6 +20,54 @@ import {
   expectBinaryFailure,
   expectBinarySuccess,
 } from "../support/process/run-binary";
+import { startLocalNodeMirror } from "../support/servers/local-node-mirror";
+import { startLocalNpmRegistry } from "../support/servers/local-npm-registry";
+
+test("selects newly available default runtime during upgrade", async () => {
+  const initialNodeVersion = "20.18.1";
+  const packageName = "default-runtime-upgrade";
+  const home = await createTestHome();
+  const nodeMirror = startLocalNodeMirror({ versions: [initialNodeVersion] });
+  const npmRegistry = await startLocalNpmRegistry({
+    packages: [
+      npmPackage(packageName, "1.0.0"),
+      npmPackage(packageName, "2.0.0"),
+    ],
+  });
+
+  try {
+    await configureNpmShimHome({
+      home,
+      registryUrl: npmRegistry.url,
+      mirrorUrl: nodeMirror.url,
+      nodeVersions: [initialNodeVersion, DEFAULT_NODE_VERSION],
+      bootstrapVersion: initialNodeVersion,
+    });
+    const shim = createShimCommands(home);
+
+    expectBinarySuccess(await shim.install(`${packageName}@1.0.0`));
+    await expectToolRuntime(
+      home.registry,
+      `npm:${packageName}`,
+      initialNodeVersion,
+    );
+
+    nodeMirror.setVersions([initialNodeVersion, DEFAULT_NODE_VERSION]);
+
+    expectBinarySuccess(await shim.upgrade(packageName));
+
+    await expectToolVersion(home.registry, `npm:${packageName}`, "2.0.0");
+    await expectToolRuntime(
+      home.registry,
+      `npm:${packageName}`,
+      DEFAULT_NODE_VERSION,
+    );
+  } finally {
+    await nodeMirror.stop();
+    await npmRegistry.stop();
+    await removeTestHome(home);
+  }
+});
 
 test("preserves explicit runtime selection during upgrade", async () => {
   await withNpmShimHome(

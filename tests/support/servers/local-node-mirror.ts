@@ -1,5 +1,6 @@
 export type LocalNodeMirror = {
   url: string;
+  setVersions: (versions: string[]) => void;
   stop: () => Promise<void>;
 };
 
@@ -15,13 +16,14 @@ const toNodeRelease = (version: string): { version: string; lts: string } => ({
 export const startLocalNodeMirror = ({
   versions,
 }: LocalNodeMirrorInput): LocalNodeMirror => {
+  let currentVersions = versions;
   const server = Bun.serve({
     port: 0,
     fetch: (request) => {
       const url = new URL(request.url);
 
       if (url.pathname === "/index.json") {
-        return Response.json(versions.map(toNodeRelease));
+        return Response.json(currentVersions.map(toNodeRelease));
       }
 
       return new Response("not found", { status: 404 });
@@ -30,6 +32,9 @@ export const startLocalNodeMirror = ({
 
   return {
     url: server.url.toString().replace(/\/$/u, ""),
+    setVersions: (nextVersions) => {
+      currentVersions = nextVersions;
+    },
     stop: async () => {
       await server.stop(true);
     },
