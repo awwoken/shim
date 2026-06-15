@@ -6,10 +6,6 @@ The built-in provider is currently `npm`, backed by a managed `node` runtime.
 
 ## Install
 
-> TODO: publish a Homebrew formula. There is no tap available yet.
-
-Planned Homebrew command:
-
 ```sh
 brew install awwoken/tap/shim
 ```
@@ -130,6 +126,31 @@ bun run typecheck
 bun run build
 bun test
 ```
+
+## Release
+
+Releases use a release PR followed by a version tag.
+
+To prepare a release, open a PR that bumps `package.json`. Review and merge that PR normally.
+
+After the release PR is merged, tag the merged `main` commit and push the tag:
+
+```sh
+git checkout main
+git pull
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The `Release` workflow runs from pushed `v*` tags. It verifies the tag matches `package.json`, runs checks, builds macOS and Linux release archives, creates or updates the GitHub release, and updates `awwoken/homebrew-tap` with the new formula checksums. It can also be run manually with a tag for release recovery.
+
+Required repository secret:
+
+- `HOMEBREW_TAP_TOKEN` — token that can push to `awwoken/homebrew-tap`.
+
+Optional repository secret:
+
+- `RELEASE_TOKEN` — token used instead of `GITHUB_TOKEN` for creating or updating GitHub releases.
 
 ## License
 
