@@ -3,6 +3,7 @@ import { registerInstallCommand } from "@/cli/commands/install";
 import { registerListCommand } from "@/cli/commands/list";
 import { registerPruneCommand } from "@/cli/commands/prune";
 import { registerRemoveCommand } from "@/cli/commands/remove";
+import { registerRepairCommand } from "@/cli/commands/repair";
 import { registerUpgradeCommand } from "@/cli/commands/upgrade";
 import { registerWhichCommand } from "@/cli/commands/which";
 import { Command } from "commander";
@@ -23,6 +24,7 @@ export const createProgram = (): Command => {
   registerPruneCommand(program);
   registerUpgradeCommand(program);
   registerDoctorCommand(program);
+  registerRepairCommand(program);
   registerWhichCommand(program);
 
   return program;

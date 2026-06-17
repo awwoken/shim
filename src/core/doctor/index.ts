@@ -22,6 +22,12 @@ export type ToolDoctorInput = {
 
 export type ToolDoctor = (input: ToolDoctorInput) => Promise<void>;
 
+export type ShimDoctorInput = ToolDoctorInput & {
+  binName: string;
+};
+
+export type ShimDoctor = (input: ShimDoctorInput) => Promise<void>;
+
 type CheckDirectoryInput = {
   checks: DoctorCheck[];
   path: string;
