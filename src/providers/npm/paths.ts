@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { AppError } from "@/support/errors";
@@ -125,3 +126,6 @@ export const npmMetadataPath = (
   packageName: string,
   version: string,
 ): string => join(npmToolPath(paths, packageName, version), "shim.json");
+
+export const npmStagePath = (paths: ShimPaths): string =>
+  join(paths.tmp, `npm-${randomUUID()}`);

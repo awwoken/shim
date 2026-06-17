@@ -38,6 +38,7 @@ export type RegistryBin = {
 export type InstallPolicy = {
   ignoreScripts: boolean;
   runtimeOverride?: string;
+  expose?: boolean;
 };
 
 export type RegistryTool = {
@@ -64,5 +65,6 @@ export type InstallOptions = {
   runtime?: string;
   force: boolean;
   ignoreScripts: boolean;
+  expose: boolean;
   replaceToolId?: ToolId;
 };

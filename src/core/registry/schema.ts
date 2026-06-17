@@ -18,6 +18,7 @@ const runtimeRefSchema = v.strictObject({
 const installPolicySchema = v.strictObject({
   ignoreScripts: v.boolean(),
   runtimeOverride: v.optional(v.string()),
+  expose: v.optional(v.boolean()),
 });
 
 const registryToolSchema = v.strictObject({

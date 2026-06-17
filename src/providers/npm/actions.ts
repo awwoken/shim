@@ -15,6 +15,7 @@ import { removePath } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
 import { NPM_PROVIDER_ID } from "./constants";
+import { removeExposedNpmPackage } from "./exposure";
 import { installNpmPackage } from "./install";
 import { resolveNpmPackage } from "./metadata";
 import { npmPackageRoot } from "./paths";
@@ -58,6 +59,14 @@ export const removeNpmTool = async (
     const shimPath = join(paths.bin, binName);
     await removePath(shimPath);
     reporter.info(`Removed shim ${shimPath}`);
+  }
+
+  if (tool.installPolicy?.expose === true) {
+    await removeExposedNpmPackage({
+      paths,
+      packageName: tool.packageName,
+      reporter,
+    });
   }
 
   const packageRoot = npmPackageRoot(paths, tool.packageName);
@@ -110,6 +119,7 @@ export const upgradeNpmTools = async ({
         runtime: tool.installPolicy?.runtimeOverride,
         force: true,
         ignoreScripts: tool.installPolicy?.ignoreScripts ?? false,
+        expose: tool.installPolicy?.expose ?? false,
         replaceToolId: tool.id,
       },
       reporter,
