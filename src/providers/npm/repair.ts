@@ -61,7 +61,7 @@ export const repairNpmShim: ShimRepairer = async ({
 
   if (expectedContent === undefined) {
     return skipped(
-      `Skipped ${binName}; shim metadata has an unsupported type`,
+      `Skipped ${binName}; shim metadata has an unsupported or unsafe entry`,
       "Reinstall the tool to regenerate shim metadata.",
     );
   }

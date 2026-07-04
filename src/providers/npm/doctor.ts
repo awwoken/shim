@@ -90,7 +90,7 @@ export const checkNpmShim: ShimDoctor = async ({
   if (expectedContent === undefined) {
     checks.push({
       level: "error",
-      message: `Shim metadata has supported type for ${binName}`,
+      message: `Shim metadata has supported and safe entry for ${binName}`,
       hint: "Reinstall the tool to regenerate shim metadata.",
     });
 

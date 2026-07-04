@@ -9,25 +9,30 @@ import type { ShimPaths } from "@/support/paths";
 
 import { NPM_PROVIDER_ID } from "./constants";
 import { npmExposedPackageLinkPath } from "./exposure";
-import { packagePathSegments } from "./paths";
+import { npmPrefixPath, packagePathSegments } from "./paths";
 
 type ProjectedExposureLinkState = "managed" | "missing" | "unmanaged";
 
-const toolNodeModulesPath = (tool: RegistryTool): string =>
-  join(tool.toolPath, "npm-prefix", "lib", "node_modules");
+const toolNodeModulesPath = (paths: ShimPaths, tool: RegistryTool): string =>
+  join(
+    npmPrefixPath(paths, tool.packageName, tool.packageVersion),
+    "lib",
+    "node_modules",
+  );
 
 const projectedExposureLinkPath = (
+  paths: ShimPaths,
   tool: RegistryTool,
   packageName: string,
 ): string =>
-  join(toolNodeModulesPath(tool), ...packagePathSegments(packageName));
+  join(toolNodeModulesPath(paths, tool), ...packagePathSegments(packageName));
 
 const projectedExposureLinkState = async (
   paths: ShimPaths,
   tool: RegistryTool,
   packageName: string,
 ): Promise<ProjectedExposureLinkState> => {
-  const linkPath = projectedExposureLinkPath(tool, packageName);
+  const linkPath = projectedExposureLinkPath(paths, tool, packageName);
 
   try {
     const stats = await lstat(linkPath);
@@ -69,7 +74,7 @@ const ensureProjectedExposureLink = async ({
     return;
   }
 
-  const linkPath = projectedExposureLinkPath(tool, packageName);
+  const linkPath = projectedExposureLinkPath(paths, tool, packageName);
   const state = await projectedExposureLinkState(paths, tool, packageName);
 
   if (state === "managed") {
@@ -105,7 +110,7 @@ const removeProjectedExposureLink = async ({
     return;
   }
 
-  const linkPath = projectedExposureLinkPath(tool, packageName);
+  const linkPath = projectedExposureLinkPath(paths, tool, packageName);
   await removePath(linkPath);
   reporter.info(
     `Removed exposed npm package ${packageName} from ${tool.packageName}`,
