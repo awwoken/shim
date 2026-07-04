@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
-import type { RegistryTool, ShimMetadata } from "@/core/models";
+import type { BinMetadata, RegistryTool, ShimMetadata } from "@/core/models";
 import { nodeBinPath } from "@/runtimes/node";
 import { renderExpectedNodeExecutableShim } from "@/runtimes/node/shims";
 import { AppError } from "@/support/errors";
@@ -29,6 +29,48 @@ export const isSafeNpmBinName = (binName: string): boolean =>
 export const npmShimPath = (paths: ShimPaths, binName: string): string =>
   join(paths.bin, binName);
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const metadataBinsRecord = (
+  metadata: ShimMetadata,
+): Record<string, unknown> | undefined => {
+  const { bins } = metadata as { bins?: unknown };
+
+  return isRecord(bins) ? bins : undefined;
+};
+
+export const hasNpmShimMetadataBins = (metadata: ShimMetadata): boolean =>
+  metadataBinsRecord(metadata) !== undefined;
+
+export const npmShimMetadataRecordsBin = (
+  metadata: ShimMetadata,
+  binName: string,
+): boolean => metadataBinsRecord(metadata)?.[binName] !== undefined;
+
+const readBinMetadata = (
+  metadata: ShimMetadata,
+  binName: string,
+): BinMetadata | undefined => {
+  const binMetadata = metadataBinsRecord(metadata)?.[binName];
+
+  if (!isRecord(binMetadata)) {
+    return undefined;
+  }
+
+  const { source, target, type } = binMetadata;
+
+  if (
+    typeof source !== "string" ||
+    typeof type !== "string" ||
+    (target !== undefined && typeof target !== "string")
+  ) {
+    return undefined;
+  }
+
+  return { source, target, type };
+};
+
 const pathIsInsideRoot = (rootPath: string, candidatePath: string): boolean => {
   const relativePath = relative(resolve(rootPath), resolve(candidatePath));
 
@@ -39,10 +81,10 @@ const pathIsInsideRoot = (rootPath: string, candidatePath: string): boolean => {
   );
 };
 
-const realPathIsInsideRoot = (
+const existingRealPathIsInsideRoot = (
   rootPath: string,
   candidatePath: string,
-): boolean => {
+): boolean | undefined => {
   try {
     return pathIsInsideRoot(
       realpathSync.native(rootPath),
@@ -50,7 +92,7 @@ const realPathIsInsideRoot = (
     );
   } catch (caughtError) {
     if (isExpectedFsProbeError(caughtError)) {
-      return false;
+      return undefined;
     }
 
     throw caughtError;
@@ -86,11 +128,13 @@ const resolveMetadataPath = (
   }
 
   const resolvedPath = resolve(toolPath, metadataPath);
+  const realPathInside = existingRealPathIsInsideRoot(toolPath, resolvedPath);
 
-  return pathIsInsideRoot(toolPath, resolvedPath) ||
-    realPathIsInsideRoot(toolPath, resolvedPath)
-    ? resolvedPath
-    : undefined;
+  if (realPathInside !== undefined) {
+    return realPathInside ? resolvedPath : undefined;
+  }
+
+  return pathIsInsideRoot(toolPath, resolvedPath) ? resolvedPath : undefined;
 };
 
 export const renderExpectedNpmShimContent = ({
@@ -99,7 +143,7 @@ export const renderExpectedNpmShimContent = ({
   metadata,
   binName,
 }: ExpectedNpmShimContentInput): string | undefined => {
-  const binMetadata = metadata.bins[binName];
+  const binMetadata = readBinMetadata(metadata, binName);
 
   if (binMetadata === undefined) {
     return undefined;

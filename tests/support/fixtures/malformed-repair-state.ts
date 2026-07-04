@@ -88,6 +88,21 @@ export const setRegistryToolPath = async ({
   await writeJsonFile(home.registry, registry);
 };
 
+export const setShimMetadataBins = async ({
+  home,
+  toolId,
+  bins,
+}: {
+  home: TestHome;
+  toolId: string;
+  bins: unknown;
+}): Promise<void> => {
+  const { tool } = await readMutableRegistryTool(home, toolId);
+  const metadata = await readMutableMetadata(tool.metadataPath);
+
+  await writeJsonFile(tool.metadataPath, { ...metadata, bins });
+};
+
 export const setShimMetadataSourcePath = async ({
   home,
   toolId,

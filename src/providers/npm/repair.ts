@@ -5,7 +5,9 @@ import { ensureExecutable, isExecutable, writeFileAtomic } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 
 import {
+  hasNpmShimMetadataBins,
   isSafeNpmBinName,
+  npmShimMetadataRecordsBin,
   npmShimPath,
   renderExpectedNpmShimContent,
 } from "./shim-content";
@@ -45,7 +47,14 @@ export const repairNpmShim: ShimRepairer = async ({
 
   const shimPath = npmShimPath(paths, binName);
 
-  if (metadata.bins[binName] === undefined) {
+  if (!hasNpmShimMetadataBins(metadata)) {
+    return skipped(
+      `Skipped ${binName}; shim metadata is malformed`,
+      "Reinstall the tool or remove stale registry state.",
+    );
+  }
+
+  if (!npmShimMetadataRecordsBin(metadata, binName)) {
     return skipped(
       `Skipped ${binName}; metadata does not record this shim`,
       "Reinstall the tool or remove stale registry state.",

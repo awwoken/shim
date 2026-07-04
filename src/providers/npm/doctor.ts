@@ -7,7 +7,9 @@ import { assertDirectory, pathExists } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 
 import {
+  hasNpmShimMetadataBins,
   isSafeNpmBinName,
+  npmShimMetadataRecordsBin,
   npmShimPath,
   renderExpectedNpmShimContent,
 } from "./shim-content";
@@ -70,7 +72,17 @@ export const checkNpmShim: ShimDoctor = async ({
 
   const shimPath = npmShimPath(paths, binName);
 
-  if (metadata.bins[binName] === undefined) {
+  if (!hasNpmShimMetadataBins(metadata)) {
+    checks.push({
+      level: "error",
+      message: `Shim metadata is well formed for ${binName}`,
+      hint: "Reinstall the tool or remove stale registry state.",
+    });
+
+    return;
+  }
+
+  if (!npmShimMetadataRecordsBin(metadata, binName)) {
     checks.push({
       level: "error",
       message: `Metadata records shim ${binName}`,
