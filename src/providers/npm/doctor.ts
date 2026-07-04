@@ -6,7 +6,11 @@ import { npmBinPath } from "@/runtimes/node";
 import { assertDirectory, pathExists } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 
-import { npmShimPath, renderExpectedNpmShimContent } from "./shim-content";
+import {
+  isSafeNpmBinName,
+  npmShimPath,
+  renderExpectedNpmShimContent,
+} from "./shim-content";
 
 const readShimContent = async (
   shimPath: string,
@@ -54,6 +58,16 @@ export const checkNpmShim: ShimDoctor = async ({
   binName,
   checks,
 }): Promise<void> => {
+  if (!isSafeNpmBinName(binName)) {
+    checks.push({
+      level: "error",
+      message: `Registry records safe shim name ${binName}`,
+      hint: "Reinstall the tool or remove stale registry state.",
+    });
+
+    return;
+  }
+
   const shimPath = npmShimPath(paths, binName);
 
   if (metadata.bins[binName] === undefined) {

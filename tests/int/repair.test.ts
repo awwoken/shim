@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 
+import { addTraversalRepairBin } from "../support/fixtures/malformed-repair-state";
 import { npmPackage } from "../support/fixtures/npm-package";
 import { withNpmShimHome } from "../support/harness/npm-shim-home";
 import {
@@ -8,6 +9,33 @@ import {
   expectBinarySuccess,
 } from "../support/process/run-binary";
 import { runExecutable } from "../support/process/run-executable";
+
+test("skips unsafe registry bin names during repair", async () => {
+  await withNpmShimHome(
+    { packages: [npmPackage("repair-probe", "1.0.0")] },
+    async ({ home, shim }) => {
+      const victimPath = join(home.root, "victim");
+      const victimContent = "sentinel\n";
+
+      expectBinarySuccess(await shim.install("repair-probe@1.0.0"));
+      await addTraversalRepairBin({
+        home,
+        toolId: "npm:repair-probe",
+        sourceBinName: "repair-probe",
+        traversalBinName: "../victim",
+      });
+      await Bun.write(victimPath, victimContent);
+
+      const repair = await shim.run(["repair"]);
+
+      expectBinaryFailure(repair);
+      expect(repair.stdout).toContain(
+        "Skipped ../victim; registry records an unsafe shim name",
+      );
+      expect(await Bun.file(victimPath).text()).toBe(victimContent);
+    },
+  );
+});
 
 test("repairs generated shim contents from metadata", async () => {
   await withNpmShimHome(

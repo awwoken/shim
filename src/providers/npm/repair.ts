@@ -4,7 +4,11 @@ import type { RepairResult, ShimRepairer } from "@/core/repair";
 import { ensureExecutable, isExecutable, writeFileAtomic } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 
-import { npmShimPath, renderExpectedNpmShimContent } from "./shim-content";
+import {
+  isSafeNpmBinName,
+  npmShimPath,
+  renderExpectedNpmShimContent,
+} from "./shim-content";
 
 const readCurrentShimContent = async (
   shimPath: string,
@@ -32,6 +36,13 @@ export const repairNpmShim: ShimRepairer = async ({
   metadata,
   binName,
 }): Promise<RepairResult> => {
+  if (!isSafeNpmBinName(binName)) {
+    return skipped(
+      `Skipped ${binName}; registry records an unsafe shim name`,
+      "Reinstall the tool or remove stale registry state.",
+    );
+  }
+
   const shimPath = npmShimPath(paths, binName);
 
   if (metadata.bins[binName] === undefined) {

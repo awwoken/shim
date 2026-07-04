@@ -14,6 +14,14 @@ export type ExpectedNpmShimContentInput = {
   binName: string;
 };
 
+export const isSafeNpmBinName = (binName: string): boolean =>
+  binName !== "" &&
+  binName !== "." &&
+  binName !== ".." &&
+  !binName.includes("/") &&
+  !binName.includes("\\") &&
+  !binName.includes("\0");
+
 export const npmShimPath = (paths: ShimPaths, binName: string): string =>
   join(paths.bin, binName);
 
