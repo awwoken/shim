@@ -185,8 +185,16 @@ Prefer high-level behavior tests while the internal structure is still evolving.
 Test tiers:
 
 - `bun run test` — fast CLI tests that avoid network and real package installs.
-- `bun run test:int` — compiled-binary integration tests using temporary `SHIM_HOME`, local HTTP fixtures, and local npm tarballs.
+- `bun run test:int` — compiled-binary integration tests using temporary `SHIM_HOME`, local HTTP fixtures, and local npm tarballs. Runs files with bounded parallelism via `--parallel=4`.
 - `bun run test:smoke` — real npm/Node lifecycle smoke test for release confidence.
+
+For targeted integration tests, build first to avoid exercising a stale `build/shim`:
+
+```sh
+bun run build && bun test tests/int/example.test.ts
+```
+
+Use file-level `--parallel` for integration suite parallelism; do not use global `--concurrent` for lifecycle tests unless each test has been audited for safe in-file concurrency.
 
 Test structure:
 
