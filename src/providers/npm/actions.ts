@@ -16,6 +16,7 @@ import type { ShimPaths } from "@/support/paths";
 
 import { NPM_PROVIDER_ID } from "./constants";
 import { removeExposedNpmPackage } from "./exposure";
+import { syncNpmExposureLinks } from "./exposure-links";
 import { installNpmPackage } from "./install";
 import { resolveNpmPackage } from "./metadata";
 import { npmPackageRoot } from "./paths";
@@ -54,6 +55,13 @@ export const removeNpmTool = async (
   const result = removeTool(registry, tool.id);
   await saveRegistry(paths, result.registry);
   reporter.info(`Updated registry ${paths.registry}`);
+
+  await syncNpmExposureLinks({
+    paths,
+    registry: result.registry,
+    packageNames: [tool.packageName],
+    reporter,
+  });
 
   for (const binName of tool.bins) {
     const shimPath = join(paths.bin, binName);

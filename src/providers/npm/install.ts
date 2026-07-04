@@ -25,6 +25,7 @@ import {
   updateNpmPackageExposure,
   type NpmExposureUpdate,
 } from "./exposure";
+import { syncNpmExposureLinks } from "./exposure-links";
 import { runNpmInstall, selectNpmInstallNodeVersion } from "./installer";
 import { resolveNpmPackage } from "./metadata";
 import {
@@ -123,6 +124,7 @@ export const installNpmPackage = async ({
     finalToolPath,
   };
   let exposureUpdate: NpmExposureUpdate | undefined;
+  let exposureSyncPackageNames = [metadata.name];
 
   try {
     reporter.info(
@@ -227,6 +229,18 @@ export const installNpmPackage = async ({
       reporter,
     });
     const upsertResult = upsertTool(registry, tool);
+    exposureSyncPackageNames = [
+      metadata.name,
+      ...upsertResult.displacedTools.map(
+        (displacedTool) => displacedTool.packageName,
+      ),
+    ];
+    await syncNpmExposureLinks({
+      paths,
+      registry: upsertResult.registry,
+      packageNames: exposureSyncPackageNames,
+      reporter,
+    });
     await saveRegistry(paths, upsertResult.registry);
     reporter.info(`Updated registry ${paths.registry}`);
 
@@ -269,6 +283,12 @@ export const installNpmPackage = async ({
 
     await restoreNpmToolPathBackup(toolPathBackup);
     await rollbackNpmPackageExposureUpdate(exposureUpdate);
+    await syncNpmExposureLinks({
+      paths,
+      registry,
+      packageNames: exposureSyncPackageNames,
+      reporter,
+    });
     await restoreNpmShims(shimBackups);
 
     throw error;

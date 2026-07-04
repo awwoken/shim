@@ -18,7 +18,7 @@ export type NpmExposureBackup = {
 export const npmExposedNodeModulesPath = (paths: ShimPaths): string =>
   join(paths.home, "npm", "exposed", "node_modules");
 
-const exposedPackageLinkPath = (
+export const npmExposedPackageLinkPath = (
   paths: ShimPaths,
   packageName: string,
 ): string =>
@@ -54,7 +54,7 @@ export const backupExposedNpmPackage = async (
   paths: ShimPaths,
   packageName: string,
 ): Promise<NpmExposureBackup> => {
-  const linkPath = exposedPackageLinkPath(paths, packageName);
+  const linkPath = npmExposedPackageLinkPath(paths, packageName);
 
   if (!(await pathExistsWithoutFollowing(linkPath))) {
     return { linkPath };
@@ -101,7 +101,7 @@ export const exposeNpmPackage = async ({
     packageName,
     packageVersion,
   );
-  const linkPath = exposedPackageLinkPath(paths, packageName);
+  const linkPath = npmExposedPackageLinkPath(paths, packageName);
 
   if (!(await pathExistsWithoutFollowing(targetPath))) {
     throw new AppError(
@@ -125,7 +125,7 @@ export const removeExposedNpmPackage = async ({
   packageName: string;
   reporter: Reporter;
 }): Promise<void> => {
-  const linkPath = exposedPackageLinkPath(paths, packageName);
+  const linkPath = npmExposedPackageLinkPath(paths, packageName);
 
   await removePath(linkPath);
   reporter.info(`Removed exposed npm package ${linkPath}`);
