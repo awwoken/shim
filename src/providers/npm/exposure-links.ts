@@ -9,9 +9,14 @@ import type { ShimPaths } from "@/support/paths";
 
 import { NPM_PROVIDER_ID } from "./constants";
 import { npmExposedPackageLinkPath } from "./exposure";
-import { npmPrefixPath, packagePathSegments } from "./paths";
+import { hasManagedNpmToolAncestor } from "./path-safety";
+import { npmPrefixPath, npmToolPath, packagePathSegments } from "./paths";
 
-type ProjectedExposureLinkState = "managed" | "missing" | "unmanaged";
+type ProjectedExposureLinkState =
+  | "managed"
+  | "missing"
+  | "unmanaged"
+  | "unsafe";
 
 const toolNodeModulesPath = (paths: ShimPaths, tool: RegistryTool): string =>
   join(
@@ -33,6 +38,11 @@ const projectedExposureLinkState = async (
   packageName: string,
 ): Promise<ProjectedExposureLinkState> => {
   const linkPath = projectedExposureLinkPath(paths, tool, packageName);
+  const toolPath = npmToolPath(paths, tool.packageName, tool.packageVersion);
+
+  if (!hasManagedNpmToolAncestor(paths, toolPath, dirname(linkPath))) {
+    return "unsafe";
+  }
 
   try {
     const stats = await lstat(linkPath);
@@ -81,6 +91,13 @@ const ensureProjectedExposureLink = async ({
     return;
   }
 
+  if (state === "unsafe") {
+    reporter.info(
+      `Skipped exposing ${packageName} to ${tool.packageName}; ${linkPath} has an unsafe filesystem ancestor`,
+    );
+    return;
+  }
+
   if (state === "unmanaged") {
     reporter.info(
       `Skipped exposing ${packageName} to ${tool.packageName}; ${linkPath} already exists`,
@@ -105,6 +122,14 @@ const removeProjectedExposureLink = async ({
   reporter: Reporter;
 }): Promise<void> => {
   const state = await projectedExposureLinkState(paths, tool, packageName);
+
+  if (state === "unsafe") {
+    const linkPath = projectedExposureLinkPath(paths, tool, packageName);
+    reporter.info(
+      `Skipped removing exposed ${packageName} from ${tool.packageName}; ${linkPath} has an unsafe filesystem ancestor`,
+    );
+    return;
+  }
 
   if (state !== "managed") {
     return;

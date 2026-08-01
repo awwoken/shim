@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { rm } from "node:fs/promises";
+import { lstat, mkdir, rename, rm, symlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { expectPathMissing } from "../support/assertions/filesystem";
+import { expectRegistryToolPath } from "../support/assertions/registry";
 import { setRegistryToolPath } from "../support/fixtures/malformed-repair-state";
 import { npmPackage } from "../support/fixtures/npm-package";
 import { withNpmShimHome } from "../support/harness/npm-shim-home";
@@ -86,6 +87,92 @@ test("exposes selected npm packages to ESM managed node tools", async () => {
       expect(
         await runExecutable({ path: join(home.bin, "late-esm-consumer") }),
       ).toBe("loaded\n");
+    },
+  );
+});
+
+test("does not project exposure through symlinked node_modules", async () => {
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackage("managed-peer", "1.0.0"),
+        npmPackage("exposure-consumer", "1.0.0"),
+      ],
+    },
+    async ({ home, shim }) => {
+      const outsideNodeModulesPath = join(
+        dirname(home.root),
+        `${basename(home.root)}-outside-node-modules`,
+      );
+
+      try {
+        expectBinarySuccess(await shim.install("exposure-consumer@1.0.0"));
+        const toolPath = await expectRegistryToolPath(
+          home.registry,
+          "npm:exposure-consumer",
+        );
+        const nodeModulesPath = join(
+          toolPath,
+          "npm-prefix",
+          "lib",
+          "node_modules",
+        );
+        await rm(nodeModulesPath, { recursive: true });
+        await mkdir(outsideNodeModulesPath);
+        await symlink(outsideNodeModulesPath, nodeModulesPath, "dir");
+
+        expectBinarySuccess(
+          await shim.install("managed-peer@1.0.0", "--expose"),
+        );
+
+        await expectPathMissing(join(outsideNodeModulesPath, "managed-peer"));
+      } finally {
+        await rm(outsideNodeModulesPath, { force: true, recursive: true });
+      }
+    },
+  );
+});
+
+test("does not remove projected exposure through a symlinked scope", async () => {
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackage("@scope/managed-peer", "1.0.0"),
+        npmPackage("exposure-consumer", "1.0.0"),
+      ],
+    },
+    async ({ home, shim }) => {
+      const outsideScopePath = join(
+        dirname(home.root),
+        `${basename(home.root)}-outside-scope`,
+      );
+
+      try {
+        expectBinarySuccess(await shim.install("exposure-consumer@1.0.0"));
+        expectBinarySuccess(
+          await shim.install("@scope/managed-peer@1.0.0", "--expose"),
+        );
+        const toolPath = await expectRegistryToolPath(
+          home.registry,
+          "npm:exposure-consumer",
+        );
+        const scopePath = join(
+          toolPath,
+          "npm-prefix",
+          "lib",
+          "node_modules",
+          "@scope",
+        );
+        await rename(scopePath, outsideScopePath);
+        await symlink(outsideScopePath, scopePath, "dir");
+        const outsideLinkPath = join(outsideScopePath, "managed-peer");
+
+        expect((await lstat(outsideLinkPath)).isSymbolicLink()).toBe(true);
+        expectBinarySuccess(await shim.remove("@scope/managed-peer"));
+        expect((await lstat(outsideLinkPath)).isSymbolicLink()).toBe(true);
+      } finally {
+        await rm(outsideScopePath, { force: true, recursive: true });
+      }
     },
   );
 });

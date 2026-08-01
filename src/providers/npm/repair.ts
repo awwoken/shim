@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { RepairResult, ShimRepairer } from "@/core/repair";
 import {
   ensureExecutable,
+  isDirectoryWithoutFollowingSymlinks,
   isExecutable,
   isRegularFile,
   writeFileAtomic,
@@ -77,6 +78,13 @@ export const repairNpmShim: ShimRepairer = async ({
     return skipped(
       `Skipped ${binName}; shim metadata has an unsupported or unsafe entry`,
       "Reinstall the tool to regenerate shim metadata.",
+    );
+  }
+
+  if (await isDirectoryWithoutFollowingSymlinks(shimPath)) {
+    return skipped(
+      `Skipped ${binName}; shim path is a directory`,
+      "Remove the directory and rerun repair, or reinstall the tool.",
     );
   }
 

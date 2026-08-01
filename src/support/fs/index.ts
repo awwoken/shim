@@ -46,15 +46,12 @@ const probeStats = async (
   }
 };
 
-export const pathExists = async (path: string): Promise<boolean> =>
-  await probePath(path, constants.F_OK);
-
-export const isExecutable = async (path: string): Promise<boolean> =>
-  await probePath(path, constants.X_OK);
-
-export const isRegularFile = async (path: string): Promise<boolean> => {
+const probeLinkStats = async (
+  path: string,
+  predicate: (stats: Stats) => boolean,
+): Promise<boolean> => {
   try {
-    return (await lstat(path)).isFile();
+    return predicate(await lstat(path));
   } catch (caughtError) {
     if (isExpectedFsProbeError(caughtError)) {
       return false;
@@ -63,6 +60,20 @@ export const isRegularFile = async (path: string): Promise<boolean> => {
     throw caughtError;
   }
 };
+
+export const pathExists = async (path: string): Promise<boolean> =>
+  await probePath(path, constants.F_OK);
+
+export const isExecutable = async (path: string): Promise<boolean> =>
+  await probePath(path, constants.X_OK);
+
+export const isRegularFile = async (path: string): Promise<boolean> =>
+  await probeLinkStats(path, (stats) => stats.isFile());
+
+export const isDirectoryWithoutFollowingSymlinks = async (
+  path: string,
+): Promise<boolean> =>
+  await probeLinkStats(path, (stats) => stats.isDirectory());
 
 export const ensureDir = async (path: string): Promise<void> => {
   await mkdir(path, { recursive: true });

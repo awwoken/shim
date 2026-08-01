@@ -1,14 +1,13 @@
-import { realpathSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import type { BinMetadata, RegistryTool, ShimMetadata } from "@/core/models";
 import { nodeBinPath } from "@/runtimes/node";
 import { renderExpectedNodeExecutableShim } from "@/runtimes/node/shims";
 import { AppError } from "@/support/errors";
-import { isExpectedFsProbeError } from "@/support/fs/errors";
 import type { ShimPaths } from "@/support/paths";
 
 import { npmExposedNodeModulesPath } from "./exposure";
+import { isExistingPathInsideManagedNpmTool } from "./path-safety";
 import { npmToolPath } from "./paths";
 
 export type ExpectedNpmShimContentInput = {
@@ -71,34 +70,6 @@ const readBinMetadata = (
   return { source, target, type };
 };
 
-const pathIsInsideRoot = (rootPath: string, candidatePath: string): boolean => {
-  const relativePath = relative(resolve(rootPath), resolve(candidatePath));
-
-  return (
-    relativePath !== "" &&
-    !relativePath.startsWith("..") &&
-    !isAbsolute(relativePath)
-  );
-};
-
-const existingRealPathIsInsideRoot = (
-  rootPath: string,
-  candidatePath: string,
-): boolean | undefined => {
-  try {
-    return pathIsInsideRoot(
-      realpathSync.native(rootPath),
-      realpathSync.native(candidatePath),
-    );
-  } catch (caughtError) {
-    if (isExpectedFsProbeError(caughtError)) {
-      return undefined;
-    }
-
-    throw caughtError;
-  }
-};
-
 const resolveMetadataToolPath = (
   paths: ShimPaths,
   tool: RegistryTool,
@@ -115,6 +86,7 @@ const resolveMetadataToolPath = (
 };
 
 const resolveMetadataPath = (
+  paths: ShimPaths,
   toolPath: string,
   metadataPath: unknown,
 ): string | undefined => {
@@ -128,9 +100,10 @@ const resolveMetadataPath = (
   }
 
   const resolvedPath = resolve(toolPath, metadataPath);
-  const realPathInside = existingRealPathIsInsideRoot(toolPath, resolvedPath);
 
-  return realPathInside === true ? resolvedPath : undefined;
+  return isExistingPathInsideManagedNpmTool(paths, toolPath, resolvedPath)
+    ? resolvedPath
+    : undefined;
 };
 
 export const renderExpectedNpmShimContent = ({
@@ -149,11 +122,11 @@ export const renderExpectedNpmShimContent = ({
   const sourceBinPath =
     toolPath === undefined
       ? undefined
-      : resolveMetadataPath(toolPath, binMetadata.source);
+      : resolveMetadataPath(paths, toolPath, binMetadata.source);
   const targetPath =
     toolPath === undefined || binMetadata.target === undefined
       ? undefined
-      : resolveMetadataPath(toolPath, binMetadata.target);
+      : resolveMetadataPath(paths, toolPath, binMetadata.target);
 
   if (
     toolPath === undefined ||
