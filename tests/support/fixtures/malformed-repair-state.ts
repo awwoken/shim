@@ -6,6 +6,7 @@ import {
 
 type MutableRegistryTool = {
   metadataPath: string;
+  packageVersion: string;
   toolPath: string;
   bins: string[];
   runtime: {
@@ -155,6 +156,22 @@ export const removeRegistryToolBin = async ({
   const { registry, tool } = await readMutableRegistryTool(home, toolId);
 
   tool.bins = tool.bins.filter((candidate) => candidate !== binName);
+
+  await writeJsonFile(home.registry, registry);
+};
+
+export const setRegistryToolPackageVersion = async ({
+  home,
+  toolId,
+  version,
+}: {
+  home: TestHome;
+  toolId: string;
+  version: string;
+}): Promise<void> => {
+  const { registry, tool } = await readMutableRegistryTool(home, toolId);
+
+  tool.packageVersion = version;
 
   await writeJsonFile(home.registry, registry);
 };

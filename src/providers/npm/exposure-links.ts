@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import type { Registry, RegistryTool } from "@/core/models";
 import type { Reporter } from "@/core/reporter";
+import { AppError } from "@/support/errors";
 import { ensureDir, removePath } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 import type { ShimPaths } from "@/support/paths";
@@ -142,9 +143,54 @@ const removeProjectedExposureLink = async ({
   );
 };
 
-const registryNpmTools = (registry: Registry): RegistryTool[] =>
+const hasValidNpmToolPath = (
+  paths: ShimPaths,
+  tool: RegistryTool,
+  reporter: Reporter,
+): boolean => {
+  try {
+    npmToolPath(paths, tool.packageName, tool.packageVersion);
+    return true;
+  } catch (caughtError) {
+    if (caughtError instanceof AppError) {
+      reporter.info(
+        `Skipped exposure sync for ${tool.id}; ${caughtError.message}`,
+      );
+      return false;
+    }
+
+    throw caughtError;
+  }
+};
+
+const hasValidNpmPackageName = (
+  packageName: string,
+  reporter: Reporter,
+): boolean => {
+  try {
+    packagePathSegments(packageName);
+    return true;
+  } catch (caughtError) {
+    if (caughtError instanceof AppError) {
+      reporter.info(
+        `Skipped exposure sync for ${packageName}; ${caughtError.message}`,
+      );
+      return false;
+    }
+
+    throw caughtError;
+  }
+};
+
+const registryNpmTools = (
+  paths: ShimPaths,
+  registry: Registry,
+  reporter: Reporter,
+): RegistryTool[] =>
   Object.values(registry.tools).filter(
-    (tool) => tool.provider === NPM_PROVIDER_ID,
+    (tool) =>
+      tool.provider === NPM_PROVIDER_ID &&
+      hasValidNpmToolPath(paths, tool, reporter),
   );
 
 const exposedNpmPackageNames = (tools: RegistryTool[]): string[] =>
@@ -163,13 +209,15 @@ export const syncNpmExposureLinks = async ({
   packageNames?: string[];
   reporter: Reporter;
 }): Promise<void> => {
-  const tools = registryNpmTools(registry).toSorted((left, right) =>
-    left.packageName.localeCompare(right.packageName),
+  const tools = registryNpmTools(paths, registry, reporter).toSorted(
+    (left, right) => left.packageName.localeCompare(right.packageName),
   );
   const exposedPackageNameSet = new Set(exposedNpmPackageNames(tools));
   const packageNameSet = new Set([
     ...exposedPackageNameSet,
-    ...(packageNames ?? []),
+    ...(packageNames ?? []).filter((packageName) =>
+      hasValidNpmPackageName(packageName, reporter),
+    ),
   ]);
 
   for (const packageName of [...packageNameSet].toSorted()) {

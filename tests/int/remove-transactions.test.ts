@@ -1,9 +1,14 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { expectPathExists } from "../support/assertions/filesystem";
+import {
+  expectPathExists,
+  expectPathMissing,
+} from "../support/assertions/filesystem";
 import {
   expectRegistryToolPath,
+  expectToolInstalled,
+  expectToolMissing,
   readRegistry,
 } from "../support/assertions/registry";
 import {
@@ -11,12 +16,45 @@ import {
   restoreHomeWrites,
   restoreHomeWritesIfPresent,
 } from "../support/filesystem/home-permissions";
+import { setRegistryToolPackageVersion } from "../support/fixtures/malformed-repair-state";
 import { npmPackage } from "../support/fixtures/npm-package";
 import { withNpmShimHome } from "../support/harness/npm-shim-home";
 import {
   expectBinaryFailure,
   expectBinarySuccess,
 } from "../support/process/run-binary";
+
+test("removes a tool when a remaining exposure-sync entry is malformed", async () => {
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackage("remove-target", "1.0.0"),
+        npmPackage("remove-remaining", "1.0.0"),
+      ],
+    },
+    async ({ home, shim }) => {
+      expectBinarySuccess(await shim.install("remove-target@1.0.0"));
+      expectBinarySuccess(await shim.install("remove-remaining@1.0.0"));
+      const targetToolPath = await expectRegistryToolPath(
+        home.registry,
+        "npm:remove-target",
+      );
+      await setRegistryToolPackageVersion({
+        home,
+        toolId: "npm:remove-remaining",
+        version: "latest",
+      });
+
+      const remove = await shim.remove("remove-target");
+
+      expectBinarySuccess(remove);
+      await expectPathMissing(join(home.bin, "remove-target"));
+      await expectPathMissing(targetToolPath);
+      await expectToolMissing(home.registry, "npm:remove-target");
+      await expectToolInstalled(home.registry, "npm:remove-remaining");
+    },
+  );
+});
 
 test("failed registry removal keeps installed files", async () => {
   await withNpmShimHome(
