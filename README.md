@@ -4,6 +4,12 @@
 
 The built-in provider is currently `npm`, backed by a managed `node` runtime.
 
+## Why
+
+Global npm tools usually run with whichever `node` is currently selected in your shell. If `prettier` was installed for Node 22 but your shell now points at Node 24, running `prettier` depends on today's shell state instead of the runtime it was installed for.
+
+`shim` installs npm tools into managed prefixes, records the selected Node runtime, and exposes deterministic wrappers from `~/.shim/bin`. This makes global tools predictable while still supporting npm compatibility features such as `--expose` when one managed tool needs to resolve another managed package.
+
 ## Install
 
 ```sh
@@ -63,12 +69,30 @@ Check installation health:
 shim doctor
 ```
 
+`doctor` validates the shim home, registry state, runtime/provider files, PATH shadowing, and generated shim file contents.
+
+Repair generated shim files from registry metadata:
+
+```sh
+shim repair
+```
+
 Useful install options:
 
 ```sh
 shim install prettier --runtime 24
 shim install prettier --force
 shim install prettier --ignore-scripts
+shim install typescript --expose
+```
+
+Use `--expose` when an npm package should be resolvable by other managed Node tools at runtime. Exposed packages are linked into shim's managed npm module namespace, and generated Node shims include that namespace in `NODE_PATH`.
+
+For example, to let `typescript-language-server` discover the managed `typescript` package automatically:
+
+```sh
+shim install typescript --expose
+shim install typescript-language-server
 ```
 
 ## Configuration

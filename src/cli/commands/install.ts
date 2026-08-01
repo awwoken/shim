@@ -11,6 +11,7 @@ type InstallCommandOptions = {
   runtime?: string;
   force?: boolean;
   ignoreScripts?: boolean;
+  expose?: boolean;
 };
 
 export const registerInstallCommand = (program: Command): void => {
@@ -20,6 +21,10 @@ export const registerInstallCommand = (program: Command): void => {
     .option("--runtime <version>", "target runtime version, major, or lts")
     .option("--force", "replace existing bin shims")
     .option("--ignore-scripts", "disable package lifecycle scripts")
+    .option(
+      "--expose",
+      "make this npm package resolvable by other managed Node tools",
+    )
     .description("install a CLI tool into an isolated prefix")
     .action(
       async (
@@ -47,6 +52,7 @@ export const registerInstallCommand = (program: Command): void => {
                 runtime: options.runtime,
                 force: options.force ?? false,
                 ignoreScripts: options.ignoreScripts ?? false,
+                expose: options.expose ?? false,
               },
               reporter,
             }),

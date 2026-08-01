@@ -1,11 +1,69 @@
 import { delimiter, dirname } from "node:path";
 
 import type { ShimConfig } from "@/core/config";
-import { nodeBinPath, npmBinPath } from "@/runtimes/node";
+import type { Reporter } from "@/core/reporter";
+import {
+  ensureNodeRuntime,
+  fetchNodeReleases,
+  nodeBinPath,
+  npmBinPath,
+  selectNodeVersion,
+} from "@/runtimes/node";
+import { NODE_RUNTIME_ID } from "@/runtimes/node/constants";
 import type { ShimPaths } from "@/support/paths";
 import { runCommand } from "@/support/process";
 
 import { NPM_PROVIDER_ID } from "./constants";
+
+export type SelectNpmInstallNodeVersionInput = {
+  paths: ShimPaths;
+  config: ShimConfig;
+  enginesNode: string | undefined;
+  runtimeOverride: string | undefined;
+  reporter: Reporter;
+};
+
+export const selectNpmInstallNodeVersion = async ({
+  paths,
+  config,
+  enginesNode,
+  runtimeOverride,
+  reporter,
+}: SelectNpmInstallNodeVersionInput): Promise<string> => {
+  const nodeConfig = config.runtimes[NODE_RUNTIME_ID];
+  const releases = await fetchNodeReleases(nodeConfig);
+  const bootstrapNode = selectNodeVersion(
+    releases,
+    undefined,
+    nodeConfig.bootstrapVersion,
+  );
+  const targetNode = selectNodeVersion(releases, enginesNode, runtimeOverride);
+
+  if (runtimeOverride !== undefined) {
+    reporter.info(
+      `Using runtime override ${runtimeOverride}; selected node ${targetNode}`,
+    );
+  } else if (enginesNode === undefined) {
+    reporter.info(
+      `Package did not declare node requirement; selected node ${targetNode}`,
+    );
+  } else {
+    reporter.info(
+      `Package requires node ${enginesNode}; selected node ${targetNode}`,
+    );
+  }
+
+  if (targetNode !== bootstrapNode) {
+    await ensureNodeRuntime({
+      paths,
+      config: nodeConfig,
+      version: targetNode,
+      reporter,
+    });
+  }
+
+  return targetNode;
+};
 
 export type RunNpmInstallInput = {
   paths: ShimPaths;

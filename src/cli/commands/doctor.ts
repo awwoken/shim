@@ -9,7 +9,7 @@ import {
 } from "@/core/doctor";
 import type { Registry, RegistryTool, ShimMetadata } from "@/core/models";
 import { loadRegistry } from "@/core/registry";
-import { providerDoctors } from "@/providers/doctor";
+import { providerDoctors, providerShimDoctors } from "@/providers/doctor";
 import { runtimeDoctors } from "@/runtimes/doctor";
 import { isEmptyArray } from "@/support/collections";
 import { isExecutable, pathExists, readJsonFile } from "@/support/fs";
@@ -84,11 +84,21 @@ const checkPathShadowing = async (
   return checks;
 };
 
-const checkBin = async (
-  paths: ShimPaths,
-  binName: string,
-  checks: DoctorCheck[],
-): Promise<void> => {
+type CheckBinInput = {
+  paths: ShimPaths;
+  tool: RegistryTool;
+  metadata: ShimMetadata;
+  binName: string;
+  checks: DoctorCheck[];
+};
+
+const checkBin = async ({
+  paths,
+  tool,
+  metadata,
+  binName,
+  checks,
+}: CheckBinInput): Promise<void> => {
   const shimPath = join(paths.bin, binName);
 
   const shimExists = await pathExists(shimPath);
@@ -108,6 +118,20 @@ const checkBin = async (
       ? undefined
       : `Run chmod +x ${shimPath} or reinstall the tool.`,
   });
+
+  const shimDoctor = providerShimDoctors[tool.provider];
+
+  if (shimDoctor === undefined) {
+    checks.push({
+      level: "error",
+      message: `Unsupported provider for shim validation ${tool.provider}`,
+      hint: "Install a shim version that supports this provider or remove the affected tool.",
+    });
+
+    return;
+  }
+
+  await shimDoctor({ paths, tool, metadata, binName, checks });
 };
 
 type DoctorSections = {
@@ -167,7 +191,7 @@ const checkTool = async ({
   }
 
   for (const binName of tool.bins) {
-    await checkBin(paths, binName, shimChecks);
+    await checkBin({ paths, tool, metadata, binName, checks: shimChecks });
   }
 
   return { toolChecks, shimChecks };

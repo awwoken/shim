@@ -9,51 +9,37 @@ test("parses shebang command before choosing shim kind", async () => {
     {
       packages: [
         {
-          name: "node-bin",
-          version: "1.0.0",
-          bins: [{ name: "node-bin", shebang: "#!/usr/bin/env node" }],
-        },
-        {
-          name: "node-options-bin",
+          name: "shim-kind-probe",
           version: "1.0.0",
           bins: [
+            { name: "node-bin", shebang: "#!/usr/bin/env node" },
             {
               name: "node-options-bin",
               shebang: "#!/usr/bin/env -S node --experimental-strip-types",
             },
+            { name: "ts-node-bin", shebang: "#!/usr/bin/env ts-node" },
           ],
-        },
-        {
-          name: "ts-node-bin",
-          version: "1.0.0",
-          bins: [{ name: "ts-node-bin", shebang: "#!/usr/bin/env ts-node" }],
         },
       ],
     },
     async ({ home, shim }) => {
-      for (const packageSpec of [
-        "node-bin@1.0.0",
-        "node-options-bin@1.0.0",
-        "ts-node-bin@1.0.0",
-      ]) {
-        expectBinarySuccess(await shim.install(packageSpec));
-      }
+      expectBinarySuccess(await shim.install("shim-kind-probe@1.0.0"));
 
       await expectShimType({
         homeRoot: home.root,
-        packageName: "node-bin",
+        packageName: "shim-kind-probe",
         bin: "node-bin",
         type: "direct-node",
       });
       await expectShimType({
         homeRoot: home.root,
-        packageName: "node-options-bin",
+        packageName: "shim-kind-probe",
         bin: "node-options-bin",
         type: "path-fallback",
       });
       await expectShimType({
         homeRoot: home.root,
-        packageName: "ts-node-bin",
+        packageName: "shim-kind-probe",
         bin: "ts-node-bin",
         type: "path-fallback",
       });

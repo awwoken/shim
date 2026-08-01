@@ -10,6 +10,7 @@ import { AppError, toErrorMessage } from "@/support/errors";
 import { assertDirectory, removePath } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
+import { npmExposedNodeModulesPath, removeExposedNpmPackage } from "./exposure";
 import { npmPackageRoot, npmToolPath } from "./paths";
 
 export type CreateNpmShimsInput = {
@@ -62,11 +63,12 @@ export const createNpmShims = async ({
   for (const binName of binNames) {
     const sourcePath = join(prefixPath, "bin", binName);
     const shimPath = join(paths.bin, binName);
-    const metadata = await createNodeExecutableShim(
+    const metadata = await createNodeExecutableShim({
       shimPath,
-      sourcePath,
+      sourceBinPath: sourcePath,
       nodePath,
-    );
+      nodeModulesPath: npmExposedNodeModulesPath(paths),
+    });
 
     reporter.info(`Created shim ${shimPath} -> ${sourcePath}`);
 
@@ -134,6 +136,20 @@ export const removeDisplacedNpmTools = async ({
       } catch (caughtError) {
         reporter.info(
           `Could not remove displaced shim ${shimPath}: ${toErrorMessage(caughtError)}`,
+        );
+      }
+    }
+
+    if (tool.installPolicy?.expose === true) {
+      try {
+        await removeExposedNpmPackage({
+          paths,
+          packageName: tool.packageName,
+          reporter,
+        });
+      } catch (caughtError) {
+        reporter.info(
+          `Could not remove exposed displaced package ${tool.packageName}: ${toErrorMessage(caughtError)}`,
         );
       }
     }

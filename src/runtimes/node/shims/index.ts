@@ -23,22 +23,35 @@ const shellQuote = (value: string): string =>
 const managedNodePathExport = (nodeBinDir: string): string =>
   `export PATH=${shellQuote(nodeBinDir)}":$PATH"`;
 
+const nodeModulePathExport = (nodeModulesPath: string): string =>
+  `export NODE_PATH=${shellQuote(nodeModulesPath)}\${NODE_PATH:+":$NODE_PATH"}`;
+
+type NodeShimEnvironment = {
+  nodeBinDir: string;
+  nodeModulesPath: string;
+};
+
 const directNodeShim = (
   nodePath: string,
   entryPath: string,
-  nodeBinDir: string,
+  environment: NodeShimEnvironment,
 ): string =>
   [
     "#!/bin/sh",
-    managedNodePathExport(nodeBinDir),
+    managedNodePathExport(environment.nodeBinDir),
+    nodeModulePathExport(environment.nodeModulesPath),
     `exec ${shellQuote(nodePath)} ${shellQuote(entryPath)} "$@"`,
     "",
   ].join("\n");
 
-const pathFallbackShim = (sourceBinPath: string, nodeBinDir: string): string =>
+const pathFallbackShim = (
+  sourceBinPath: string,
+  environment: NodeShimEnvironment,
+): string =>
   [
     "#!/bin/sh",
-    managedNodePathExport(nodeBinDir),
+    managedNodePathExport(environment.nodeBinDir),
+    nodeModulePathExport(environment.nodeModulesPath),
     `exec ${shellQuote(sourceBinPath)} "$@"`,
     "",
   ].join("\n");
@@ -196,17 +209,64 @@ const resolveNodeEntry = async (
     : null;
 };
 
-export const createNodeExecutableShim = async (
-  shimPath: string,
-  sourceBinPath: string,
-  nodePath: string,
-): Promise<BinMetadata> => {
+type RenderExpectedNodeExecutableShimInput = {
+  type: string;
+  sourceBinPath: string;
+  targetPath?: string;
+  nodePath: string;
+  nodeModulesPath: string;
+};
+
+export const renderExpectedNodeExecutableShim = ({
+  type,
+  sourceBinPath,
+  targetPath,
+  nodePath,
+  nodeModulesPath,
+}: RenderExpectedNodeExecutableShimInput): string | undefined => {
+  const environment: NodeShimEnvironment = {
+    nodeBinDir: dirname(nodePath),
+    nodeModulesPath,
+  };
+
+  if (type === NODE_PATH_FALLBACK_SHIM_KIND) {
+    return pathFallbackShim(sourceBinPath, environment);
+  }
+
+  if (type === NODE_DIRECT_SHIM_KIND && targetPath !== undefined) {
+    return directNodeShim(nodePath, targetPath, environment);
+  }
+
+  return undefined;
+};
+
+type CreateNodeExecutableShimInput = {
+  shimPath: string;
+  sourceBinPath: string;
+  nodePath: string;
+  nodeModulesPath: string;
+};
+
+export const createNodeExecutableShim = async ({
+  shimPath,
+  sourceBinPath,
+  nodePath,
+  nodeModulesPath,
+}: CreateNodeExecutableShimInput): Promise<BinMetadata> => {
   const entry = await resolveNodeEntry(sourceBinPath);
-  const nodeBinDir = dirname(nodePath);
-  const content =
-    entry === null
-      ? pathFallbackShim(sourceBinPath, nodeBinDir)
-      : directNodeShim(nodePath, entry, nodeBinDir);
+  const type =
+    entry === null ? NODE_PATH_FALLBACK_SHIM_KIND : NODE_DIRECT_SHIM_KIND;
+  const content = renderExpectedNodeExecutableShim({
+    type,
+    sourceBinPath,
+    targetPath: entry ?? undefined,
+    nodePath,
+    nodeModulesPath,
+  });
+
+  if (content === undefined) {
+    throw new Error(`Could not render node shim for ${sourceBinPath}`);
+  }
 
   await ensureDir(dirname(shimPath));
   await writeFileAtomic(shimPath, content);
@@ -214,7 +274,7 @@ export const createNodeExecutableShim = async (
 
   return {
     source: sourceBinPath,
-    type: entry === null ? NODE_PATH_FALLBACK_SHIM_KIND : NODE_DIRECT_SHIM_KIND,
+    type,
     target: entry ?? sourceBinPath,
   };
 };

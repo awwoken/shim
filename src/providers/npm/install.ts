@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { rename } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -16,19 +15,25 @@ import {
   upsertTool,
 } from "@/core/registry";
 import type { Reporter } from "@/core/reporter";
-import {
-  ensureNodeRuntime,
-  fetchNodeReleases,
-  selectNodeVersion,
-} from "@/runtimes/node";
-import { NODE_RUNTIME_ID } from "@/runtimes/node/constants";
 import { AppError, toErrorMessage } from "@/support/errors";
 import { ensureDir, removePath, writeJsonAtomic } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
-import { runNpmInstall } from "./installer";
+import {
+  commitNpmPackageExposureUpdate,
+  rollbackNpmPackageExposureUpdate,
+  updateNpmPackageExposure,
+  type NpmExposureUpdate,
+} from "./exposure";
+import { syncNpmExposureLinks } from "./exposure-links";
+import { runNpmInstall, selectNpmInstallNodeVersion } from "./installer";
 import { resolveNpmPackage } from "./metadata";
-import { npmMetadataPath, npmPackageRoot, npmToolPath } from "./paths";
+import {
+  npmMetadataPath,
+  npmPackageRoot,
+  npmStagePath,
+  npmToolPath,
+} from "./paths";
 import {
   createInitialMetadata,
   createNpmRegistryTool,
@@ -89,45 +94,17 @@ export const installNpmPackage = async ({
 
   reporter.info("");
 
-  const nodeConfig = config.runtimes[NODE_RUNTIME_ID];
-  const releases = await fetchNodeReleases(nodeConfig);
-  const bootstrapNode = selectNodeVersion(
-    releases,
-    undefined,
-    nodeConfig.bootstrapVersion,
-  );
-  const targetNode = selectNodeVersion(
-    releases,
-    metadata.enginesNode,
-    options.runtime,
-  );
-
-  if (options.runtime !== undefined) {
-    reporter.info(
-      `Using runtime override ${options.runtime}; selected node ${targetNode}`,
-    );
-  } else if (metadata.enginesNode === undefined) {
-    reporter.info(
-      `Package did not declare node requirement; selected node ${targetNode}`,
-    );
-  } else {
-    reporter.info(
-      `Package requires node ${metadata.enginesNode}; selected node ${targetNode}`,
-    );
-  }
-
-  if (targetNode !== bootstrapNode) {
-    await ensureNodeRuntime({
-      paths,
-      config: nodeConfig,
-      version: targetNode,
-      reporter,
-    });
-  }
+  const targetNode = await selectNpmInstallNodeVersion({
+    paths,
+    config,
+    enginesNode: metadata.enginesNode,
+    runtimeOverride: options.runtime,
+    reporter,
+  });
 
   reporter.info("");
 
-  const stagePath = join(paths.tmp, `npm-${randomUUID()}`);
+  const stagePath = npmStagePath(paths);
   const stagePrefixPath = join(stagePath, "npm-prefix");
   const finalToolPath = npmToolPath(paths, metadata.name, metadata.version);
   const packageRoot = npmPackageRoot(paths, metadata.name);
@@ -138,6 +115,7 @@ export const installNpmPackage = async ({
   const installPolicy: InstallPolicy = {
     ignoreScripts: options.ignoreScripts,
     runtimeOverride: options.runtime,
+    expose: options.expose,
   };
   const previousBins = existingTool === undefined ? [] : existingTool.bins;
   let stageWasPromoted = false;
@@ -145,6 +123,8 @@ export const installNpmPackage = async ({
   let toolPathBackup: Awaited<ReturnType<typeof backupExistingNpmToolPath>> = {
     finalToolPath,
   };
+  let exposureUpdate: NpmExposureUpdate | undefined;
+  let exposureSyncPackageNames = [metadata.name];
 
   try {
     reporter.info(
@@ -223,6 +203,14 @@ export const installNpmPackage = async ({
     });
     reporter.info(`Wrote metadata ${finalMetadataPath}`);
 
+    exposureUpdate = await updateNpmPackageExposure({
+      paths,
+      packageName: metadata.name,
+      packageVersion: metadata.version,
+      expose: options.expose,
+      reporter,
+    });
+
     const tool = createNpmRegistryTool({
       paths,
       packageName: metadata.name,
@@ -241,6 +229,18 @@ export const installNpmPackage = async ({
       reporter,
     });
     const upsertResult = upsertTool(registry, tool);
+    exposureSyncPackageNames = [
+      metadata.name,
+      ...upsertResult.displacedTools.map(
+        (displacedTool) => displacedTool.packageName,
+      ),
+    ];
+    await syncNpmExposureLinks({
+      paths,
+      registry: upsertResult.registry,
+      packageNames: exposureSyncPackageNames,
+      reporter,
+    });
     await saveRegistry(paths, upsertResult.registry);
     reporter.info(`Updated registry ${paths.registry}`);
 
@@ -265,6 +265,14 @@ export const installNpmPackage = async ({
       );
     }
 
+    try {
+      await commitNpmPackageExposureUpdate(exposureUpdate);
+    } catch (caughtError) {
+      reporter.info(
+        `Could not remove exposure backup: ${toErrorMessage(caughtError)}`,
+      );
+    }
+
     return tool;
   } catch (error) {
     await removePath(stagePath);
@@ -274,6 +282,13 @@ export const installNpmPackage = async ({
     }
 
     await restoreNpmToolPathBackup(toolPathBackup);
+    await rollbackNpmPackageExposureUpdate(exposureUpdate);
+    await syncNpmExposureLinks({
+      paths,
+      registry,
+      packageNames: exposureSyncPackageNames,
+      reporter,
+    });
     await restoreNpmShims(shimBackups);
 
     throw error;
