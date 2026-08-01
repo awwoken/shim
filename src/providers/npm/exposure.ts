@@ -8,9 +8,11 @@ import { ensureDir, removePath } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 import type { ShimPaths } from "@/support/paths";
 
+import { hasPathAncestorInsideRoot } from "./path-safety";
 import { npmPrefixPath, packagePathSegments } from "./paths";
 
 export type NpmExposureBackup = {
+  rootPath: string;
   linkPath: string;
   backupPath?: string;
 };
@@ -36,6 +38,20 @@ const installedPackageModulePath = (
     ...packagePathSegments(packageName),
   );
 
+const assertManagedExposurePath = (
+  rootPath: string,
+  linkPath: string,
+): void => {
+  if (hasPathAncestorInsideRoot(rootPath, dirname(linkPath))) {
+    return;
+  }
+
+  throw new AppError(
+    `Unsafe npm exposure path ${linkPath}`,
+    "Remove symlinked exposure directories that point outside the shim home.",
+  );
+};
+
 const pathExistsWithoutFollowing = async (path: string): Promise<boolean> => {
   try {
     await lstat(path);
@@ -54,22 +70,26 @@ export const backupExposedNpmPackage = async (
   paths: ShimPaths,
   packageName: string,
 ): Promise<NpmExposureBackup> => {
+  const rootPath = paths.home;
   const linkPath = npmExposedPackageLinkPath(paths, packageName);
+  assertManagedExposurePath(rootPath, linkPath);
 
   if (!(await pathExistsWithoutFollowing(linkPath))) {
-    return { linkPath };
+    return { rootPath, linkPath };
   }
 
   const backupPath = join(dirname(linkPath), `.shim-exposure-${randomUUID()}`);
   await rename(linkPath, backupPath);
 
-  return { linkPath, backupPath };
+  return { rootPath, linkPath, backupPath };
 };
 
 export const restoreExposedNpmPackageBackup = async ({
+  rootPath,
   linkPath,
   backupPath,
 }: NpmExposureBackup): Promise<void> => {
+  assertManagedExposurePath(rootPath, linkPath);
   await removePath(linkPath);
 
   if (backupPath !== undefined) {
@@ -78,9 +98,11 @@ export const restoreExposedNpmPackageBackup = async ({
 };
 
 export const removeExposedNpmPackageBackup = async ({
+  rootPath,
   backupPath,
 }: NpmExposureBackup): Promise<void> => {
   if (backupPath !== undefined) {
+    assertManagedExposurePath(rootPath, backupPath);
     await removePath(backupPath);
   }
 };
@@ -102,6 +124,7 @@ export const exposeNpmPackage = async ({
     packageVersion,
   );
   const linkPath = npmExposedPackageLinkPath(paths, packageName);
+  assertManagedExposurePath(paths.home, linkPath);
 
   if (!(await pathExistsWithoutFollowing(targetPath))) {
     throw new AppError(
@@ -126,6 +149,7 @@ export const removeExposedNpmPackage = async ({
   reporter: Reporter;
 }): Promise<void> => {
   const linkPath = npmExposedPackageLinkPath(paths, packageName);
+  assertManagedExposurePath(paths.home, linkPath);
 
   await removePath(linkPath);
   reporter.info(`Removed exposed npm package ${linkPath}`);

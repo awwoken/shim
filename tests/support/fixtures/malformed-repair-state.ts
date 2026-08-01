@@ -139,6 +139,22 @@ export const addUnownedRepairBin = async ({
   });
 };
 
+export const removeRegistryToolBin = async ({
+  home,
+  toolId,
+  binName,
+}: {
+  home: TestHome;
+  toolId: string;
+  binName: string;
+}): Promise<void> => {
+  const { registry, tool } = await readMutableRegistryTool(home, toolId);
+
+  tool.bins = tool.bins.filter((candidate) => candidate !== binName);
+
+  await writeJsonFile(home.registry, registry);
+};
+
 export const setRegistryToolPath = async ({
   home,
   toolId,

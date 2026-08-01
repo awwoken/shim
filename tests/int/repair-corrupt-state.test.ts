@@ -5,6 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { expectRegistryToolPath } from "../support/assertions/registry";
 import {
   addUnownedRepairBin,
+  removeRegistryToolBin,
   setShimMetadataSourcePath,
 } from "../support/fixtures/malformed-repair-state";
 import { npmPackage } from "../support/fixtures/npm-package";
@@ -87,6 +88,31 @@ test("skips bins not canonically owned by the registry tool", async () => {
       );
       expect(await runExecutable({ path: ownerShimPath })).toBe(
         "repair-owner@1.0.0\n",
+      );
+    },
+  );
+});
+
+test("repairs bins recorded only in the canonical registry map", async () => {
+  await withNpmShimHome(
+    { packages: [npmPackage("repair-canonical-only", "1.0.0")] },
+    async ({ home, shim }) => {
+      const shimPath = join(home.bin, "repair-canonical-only");
+
+      expectBinarySuccess(await shim.install("repair-canonical-only@1.0.0"));
+      await removeRegistryToolBin({
+        home,
+        toolId: "npm:repair-canonical-only",
+        binName: "repair-canonical-only",
+      });
+      await Bun.write(shimPath, "#!/bin/sh\nexit 0\n");
+
+      const repair = await shim.run(["repair"]);
+
+      expectBinarySuccess(repair);
+      expect(repair.stdout).toContain("Repaired shim");
+      expect(await runExecutable({ path: shimPath })).toBe(
+        "repair-canonical-only@1.0.0\n",
       );
     },
   );

@@ -106,24 +106,28 @@ export const isExistingPathInsideManagedNpmTool = (
   isManagedNpmToolPath(paths, toolPath) &&
   existingRealPathIsInsideRoot(toolPath, candidatePath);
 
+export const hasPathAncestorInsideRoot = (
+  rootPath: string,
+  candidatePath: string,
+): boolean => {
+  if (!pathIsInsideRoot(rootPath, candidatePath, false)) {
+    return false;
+  }
+
+  const realRootPath = existingRealPath(rootPath);
+  const realAncestorPath = nearestExistingRealPath(candidatePath);
+
+  return (
+    realRootPath !== undefined &&
+    realAncestorPath !== undefined &&
+    pathIsInsideRoot(realRootPath, realAncestorPath, true)
+  );
+};
+
 export const hasManagedNpmToolAncestor = (
   paths: ShimPaths,
   toolPath: string,
   candidatePath: string,
-): boolean => {
-  if (
-    !isManagedNpmToolPath(paths, toolPath) ||
-    !pathIsInsideRoot(toolPath, candidatePath, false)
-  ) {
-    return false;
-  }
-
-  const realToolPath = existingRealPath(toolPath);
-  const realAncestorPath = nearestExistingRealPath(candidatePath);
-
-  return (
-    realToolPath !== undefined &&
-    realAncestorPath !== undefined &&
-    pathIsInsideRoot(realToolPath, realAncestorPath, true)
-  );
-};
+): boolean =>
+  isManagedNpmToolPath(paths, toolPath) &&
+  hasPathAncestorInsideRoot(toolPath, candidatePath);

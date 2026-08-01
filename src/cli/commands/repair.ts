@@ -40,6 +40,14 @@ const binNotOwnedResult = (
   hint: "Reinstall the tool or remove stale registry state.",
 });
 
+const repairBinNames = (registry: Registry, tool: RegistryTool): string[] => {
+  const canonicalBinNames = Object.entries(registry.bins)
+    .filter(([, bin]) => bin.toolId === tool.id)
+    .map(([binName]) => binName);
+
+  return [...new Set([...tool.bins, ...canonicalBinNames])].toSorted();
+};
+
 const repairTool = async (
   paths: ShimPaths,
   registry: Registry,
@@ -64,17 +72,19 @@ const repairTool = async (
   const repairer = providerShimRepairers[tool.provider];
 
   return await Promise.all(
-    tool.bins.toSorted().map(async (binName): Promise<RepairResult> => {
-      if (registry.bins[binName]?.toolId !== tool.id) {
-        return binNotOwnedResult(tool, binName);
-      }
+    repairBinNames(registry, tool).map(
+      async (binName): Promise<RepairResult> => {
+        if (registry.bins[binName]?.toolId !== tool.id) {
+          return binNotOwnedResult(tool, binName);
+        }
 
-      if (repairer === undefined) {
-        return unsupportedProviderResult(tool, binName);
-      }
+        if (repairer === undefined) {
+          return unsupportedProviderResult(tool, binName);
+        }
 
-      return await repairer({ paths, tool, metadata, binName });
-    }),
+        return await repairer({ paths, tool, metadata, binName });
+      },
+    ),
   );
 };
 
