@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 
 import type { RepairResult, ShimRepairer } from "@/core/repair";
 import { ensureExecutable, isExecutable, writeFileAtomic } from "@/support/fs";
@@ -20,6 +20,18 @@ const readCurrentShimContent = async (
   } catch (caughtError) {
     if (isExpectedFsProbeError(caughtError)) {
       return undefined;
+    }
+
+    throw caughtError;
+  }
+};
+
+const isRegularShimFile = async (shimPath: string): Promise<boolean> => {
+  try {
+    return (await lstat(shimPath)).isFile();
+  } catch (caughtError) {
+    if (isExpectedFsProbeError(caughtError)) {
+      return false;
     }
 
     throw caughtError;
@@ -75,10 +87,16 @@ export const repairNpmShim: ShimRepairer = async ({
     );
   }
 
-  const [currentContent, executable] = await Promise.all([
-    readCurrentShimContent(shimPath),
-    isExecutable(shimPath),
-  ]);
+  let currentContent: string | undefined;
+  let executable = false;
+
+  if (await isRegularShimFile(shimPath)) {
+    [currentContent, executable] = await Promise.all([
+      readCurrentShimContent(shimPath),
+      isExecutable(shimPath),
+    ]);
+  }
+
   const contentMatches = currentContent === expectedContent;
 
   if (contentMatches && executable) {

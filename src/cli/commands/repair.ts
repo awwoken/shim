@@ -16,6 +16,12 @@ const metadataMissingResult = (tool: RegistryTool): RepairResult => ({
   hint: "Reinstall the tool or remove stale registry state.",
 });
 
+const metadataMalformedResult = (tool: RegistryTool): RepairResult => ({
+  status: "skipped",
+  message: `Skipped ${tool.packageName}@${tool.packageVersion}; metadata is malformed`,
+  hint: "Reinstall the tool or remove stale registry state.",
+});
+
 const unsupportedProviderResult = (
   tool: RegistryTool,
   binName: string,
@@ -29,7 +35,17 @@ const repairTool = async (
   paths: ShimPaths,
   tool: RegistryTool,
 ): Promise<RepairResult[]> => {
-  const metadata = await readJsonFile<ShimMetadata>(tool.metadataPath);
+  let metadata: ShimMetadata | undefined;
+
+  try {
+    metadata = await readJsonFile<ShimMetadata>(tool.metadataPath);
+  } catch (caughtError) {
+    if (caughtError instanceof SyntaxError) {
+      return [metadataMalformedResult(tool)];
+    }
+
+    throw caughtError;
+  }
 
   if (metadata === undefined) {
     return [metadataMissingResult(tool)];

@@ -1,12 +1,16 @@
 import { expect, test } from "bun:test";
-import { symlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, lstat, symlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
+
+import { isExecutable } from "@/support/fs";
 
 import { expectRegistryToolPath } from "../support/assertions/registry";
 import {
   addTraversalRepairBin,
   setShimMetadataBins,
   setShimMetadataSourcePath,
+  writeInvalidShimMetadataJson,
 } from "../support/fixtures/malformed-repair-state";
 import { npmPackage } from "../support/fixtures/npm-package";
 import { withNpmShimHome } from "../support/harness/npm-shim-home";
@@ -104,6 +108,39 @@ test("skips malformed shim metadata without aborting repair", async () => {
   );
 });
 
+test("skips invalid JSON metadata without aborting repair", async () => {
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackage("repair-invalid-json", "1.0.0"),
+        npmPackage("repair-valid-json", "1.0.0"),
+      ],
+    },
+    async ({ home, shim }) => {
+      const validShimPath = join(home.bin, "repair-valid-json");
+
+      expectBinarySuccess(await shim.install("repair-invalid-json@1.0.0"));
+      expectBinarySuccess(await shim.install("repair-valid-json@1.0.0"));
+      await writeInvalidShimMetadataJson({
+        home,
+        toolId: "npm:repair-invalid-json",
+      });
+      await Bun.write(validShimPath, "#!/bin/sh\nexit 0\n");
+
+      const repair = await shim.run(["repair"]);
+
+      expectBinaryFailure(repair);
+      expect(repair.stdout).toContain(
+        "Skipped repair-invalid-json@1.0.0; metadata is malformed",
+      );
+      expect(repair.stdout).toContain("Repaired shim");
+      expect(await runExecutable({ path: validShimPath })).toBe(
+        "repair-valid-json@1.0.0\n",
+      );
+    },
+  );
+});
+
 test("skips shim metadata paths that resolve outside the tool", async () => {
   await withNpmShimHome(
     { packages: [npmPackage("repair-probe", "1.0.0")] },
@@ -136,6 +173,40 @@ test("skips shim metadata paths that resolve outside the tool", async () => {
         "Skipped repair-probe; shim metadata has an unsupported or unsafe entry",
       );
       expect(await Bun.file(shimPath).text()).toBe(brokenShimContent);
+    },
+  );
+});
+
+test("replaces symlinked shims without changing the target", async () => {
+  await withNpmShimHome(
+    { packages: [npmPackage("repair-symlink", "1.0.0")] },
+    async ({ home, shim }) => {
+      const shimPath = join(home.bin, "repair-symlink");
+      const targetPath = join(home.root, "external-target");
+
+      expectBinarySuccess(await shim.install("repair-symlink@1.0.0"));
+      const expectedShimContent = await Bun.file(shimPath).text();
+      await Bun.write(targetPath, expectedShimContent);
+      await chmod(
+        targetPath,
+        constants.S_IRUSR |
+          constants.S_IWUSR |
+          constants.S_IRGRP |
+          constants.S_IROTH,
+      );
+      await unlink(shimPath);
+      await symlink(targetPath, shimPath);
+
+      const repair = await shim.run(["repair"]);
+
+      expectBinarySuccess(repair);
+      expect(repair.stdout).toContain("Repaired shim");
+      expect(await isExecutable(targetPath)).toBe(false);
+      expect(await Bun.file(targetPath).text()).toBe(expectedShimContent);
+      expect((await lstat(shimPath)).isFile()).toBe(true);
+      expect(await runExecutable({ path: shimPath })).toBe(
+        "repair-symlink@1.0.0\n",
+      );
     },
   );
 });

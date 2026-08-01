@@ -103,6 +103,18 @@ export const setShimMetadataBins = async ({
   await writeJsonFile(tool.metadataPath, { ...metadata, bins });
 };
 
+export const writeInvalidShimMetadataJson = async ({
+  home,
+  toolId,
+}: {
+  home: TestHome;
+  toolId: string;
+}): Promise<void> => {
+  const { tool } = await readMutableRegistryTool(home, toolId);
+
+  await Bun.write(tool.metadataPath, "{ invalid json\n");
+};
+
 export const setShimMetadataSourcePath = async ({
   home,
   toolId,
