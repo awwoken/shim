@@ -176,6 +176,22 @@ export const setRegistryToolPackageVersion = async ({
   await writeJsonFile(home.registry, registry);
 };
 
+export const setRegistryToolRuntimeKind = async ({
+  home,
+  toolId,
+  kind,
+}: {
+  home: TestHome;
+  toolId: string;
+  kind: string;
+}): Promise<void> => {
+  const { registry, tool } = await readMutableRegistryTool(home, toolId);
+
+  tool.runtime.kind = kind;
+
+  await writeJsonFile(home.registry, registry);
+};
+
 export const setRegistryToolRuntimeVersion = async ({
   home,
   toolId,

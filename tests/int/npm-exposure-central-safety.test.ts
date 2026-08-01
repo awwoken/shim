@@ -2,7 +2,14 @@ import { expect, test } from "bun:test";
 import { lstat, mkdir, rename, rm, symlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-import { expectPathMissing } from "../support/assertions/filesystem";
+import {
+  expectPathExists,
+  expectPathMissing,
+} from "../support/assertions/filesystem";
+import {
+  expectRegistryToolPath,
+  expectToolInstalled,
+} from "../support/assertions/registry";
 import { npmPackage } from "../support/fixtures/npm-package";
 import { withNpmShimHome } from "../support/harness/npm-shim-home";
 import {
@@ -52,6 +59,11 @@ test("rejects central exposure removal through symlinked ancestors", async () =>
         expectBinarySuccess(
           await shim.install("managed-peer@1.0.0", "--expose"),
         );
+        const toolPath = await expectRegistryToolPath(
+          home.registry,
+          "npm:managed-peer",
+        );
+        const shimPath = join(home.bin, "managed-peer");
         await rename(npmPath, outsideNpmPath);
         await symlink(outsideNpmPath, npmPath, "dir");
         const outsideLinkPath = join(
@@ -68,6 +80,9 @@ test("rejects central exposure removal through symlinked ancestors", async () =>
         expectBinaryFailure(remove);
         expect(remove.stderr).toContain("Unsafe npm exposure path");
         expect((await lstat(outsideLinkPath)).isSymbolicLink()).toBe(true);
+        await expectToolInstalled(home.registry, "npm:managed-peer");
+        await expectPathExists(shimPath);
+        await expectPathExists(toolPath);
       } finally {
         await rm(outsideNpmPath, { force: true, recursive: true });
       }

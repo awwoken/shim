@@ -15,7 +15,10 @@ import { removePath } from "@/support/fs";
 import type { ShimPaths } from "@/support/paths";
 
 import { NPM_PROVIDER_ID } from "./constants";
-import { removeExposedNpmPackage } from "./exposure";
+import {
+  assertNpmExposurePathIsManaged,
+  removeExposedNpmPackage,
+} from "./exposure";
 import { syncNpmExposureLinks } from "./exposure-links";
 import { installNpmPackage } from "./install";
 import { resolveNpmPackage } from "./metadata";
@@ -50,6 +53,10 @@ export const removeNpmTool = async (
 
   if (tool === undefined) {
     throw new AppError(`No installed package or bin matched "${packageOrBin}"`);
+  }
+
+  if (tool.installPolicy?.expose === true) {
+    assertNpmExposurePathIsManaged(paths, tool.packageName);
   }
 
   const result = removeTool(registry, tool.id);

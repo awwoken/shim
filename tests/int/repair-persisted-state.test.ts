@@ -3,6 +3,7 @@ import { rename, rm, symlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import {
+  setRegistryToolRuntimeKind,
   setRegistryToolRuntimeVersion,
   writeShimMetadataValue,
 } from "../support/fixtures/malformed-repair-state";
@@ -74,6 +75,42 @@ test("skips null shim metadata without aborting other repairs", async () => {
       expect(repair.stdout).toContain("Repaired shim");
       expect(await runExecutable({ path: goodShimPath })).toBe(
         "repair-null-good@1.0.0\n",
+      );
+    },
+  );
+});
+
+test("skips non-Node runtime kinds without aborting other repairs", async () => {
+  await withNpmShimHome(
+    {
+      packages: [
+        npmPackage("repair-invalid-runtime-kind", "1.0.0"),
+        npmPackage("repair-kind-good", "1.0.0"),
+      ],
+    },
+    async ({ home, shim }) => {
+      const goodShimPath = join(home.bin, "repair-kind-good");
+
+      expectBinarySuccess(
+        await shim.install("repair-invalid-runtime-kind@1.0.0"),
+      );
+      expectBinarySuccess(await shim.install("repair-kind-good@1.0.0"));
+      await setRegistryToolRuntimeKind({
+        home,
+        toolId: "npm:repair-invalid-runtime-kind",
+        kind: "other",
+      });
+      await Bun.write(goodShimPath, "#!/bin/sh\nexit 0\n");
+
+      const repair = await shim.run(["repair"]);
+
+      expectBinaryFailure(repair);
+      expect(repair.stdout).toContain(
+        "Skipped repair-invalid-runtime-kind; shim metadata has an unsupported or unsafe entry",
+      );
+      expect(repair.stdout).toContain("Repaired shim");
+      expect(await runExecutable({ path: goodShimPath })).toBe(
+        "repair-kind-good@1.0.0\n",
       );
     },
   );

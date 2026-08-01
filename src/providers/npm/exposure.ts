@@ -52,6 +52,16 @@ const assertManagedExposurePath = (
   );
 };
 
+export const assertNpmExposurePathIsManaged = (
+  paths: ShimPaths,
+  packageName: string,
+): void => {
+  assertManagedExposurePath(
+    paths.home,
+    npmExposedPackageLinkPath(paths, packageName),
+  );
+};
+
 const pathExistsWithoutFollowing = async (path: string): Promise<boolean> => {
   try {
     await lstat(path);

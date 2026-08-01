@@ -2,6 +2,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import type { BinMetadata, RegistryTool, ShimMetadata } from "@/core/models";
 import { nodeBinPath } from "@/runtimes/node";
+import { NODE_RUNTIME_ID } from "@/runtimes/node/constants";
 import { renderExpectedNodeExecutableShim } from "@/runtimes/node/shims";
 import { AppError } from "@/support/errors";
 import type { ShimPaths } from "@/support/paths";
@@ -93,6 +94,10 @@ const resolveMetadataNodePath = (
   paths: ShimPaths,
   tool: RegistryTool,
 ): string | undefined => {
+  if (tool.runtime.kind !== NODE_RUNTIME_ID) {
+    return undefined;
+  }
+
   try {
     return nodeBinPath(paths, tool.runtime.version);
   } catch (caughtError) {
