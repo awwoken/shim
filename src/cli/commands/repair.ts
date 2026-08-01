@@ -1,6 +1,6 @@
 import { writeOut } from "@/cli/output";
 import { colorProgress, colorSuccess, colorWarning } from "@/cli/output/colors";
-import type { RegistryTool, ShimMetadata } from "@/core/models";
+import type { Registry, RegistryTool, ShimMetadata } from "@/core/models";
 import { loadRegistry } from "@/core/registry";
 import type { RepairResult } from "@/core/repair";
 import { providerShimRepairers } from "@/providers/repair";
@@ -31,8 +31,18 @@ const unsupportedProviderResult = (
   hint: "Install a shim version that supports this provider or remove the affected tool.",
 });
 
+const binNotOwnedResult = (
+  tool: RegistryTool,
+  binName: string,
+): RepairResult => ({
+  status: "skipped",
+  message: `Skipped ${binName}; registry does not assign this shim to ${tool.id}`,
+  hint: "Reinstall the tool or remove stale registry state.",
+});
+
 const repairTool = async (
   paths: ShimPaths,
+  registry: Registry,
   tool: RegistryTool,
 ): Promise<RepairResult[]> => {
   let metadata: ShimMetadata | undefined;
@@ -54,14 +64,17 @@ const repairTool = async (
   const repairer = providerShimRepairers[tool.provider];
 
   return await Promise.all(
-    tool.bins
-      .toSorted()
-      .map(
-        async (binName): Promise<RepairResult> =>
-          repairer === undefined
-            ? unsupportedProviderResult(tool, binName)
-            : await repairer({ paths, tool, metadata, binName }),
-      ),
+    tool.bins.toSorted().map(async (binName): Promise<RepairResult> => {
+      if (registry.bins[binName]?.toolId !== tool.id) {
+        return binNotOwnedResult(tool, binName);
+      }
+
+      if (repairer === undefined) {
+        return unsupportedProviderResult(tool, binName);
+      }
+
+      return await repairer({ paths, tool, metadata, binName });
+    }),
   );
 };
 
@@ -73,7 +86,7 @@ const repairInstalledShims = async (
     left.id.localeCompare(right.id),
   );
   const results = await Promise.all(
-    tools.map(async (tool) => await repairTool(paths, tool)),
+    tools.map(async (tool) => await repairTool(paths, registry, tool)),
   );
 
   return results.flat();

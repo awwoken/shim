@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
-import { access, chmod, mkdir, rename, rm, stat } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  lstat,
+  mkdir,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { dirname } from "node:path";
 
 import {
@@ -43,6 +51,18 @@ export const pathExists = async (path: string): Promise<boolean> =>
 
 export const isExecutable = async (path: string): Promise<boolean> =>
   await probePath(path, constants.X_OK);
+
+export const isRegularFile = async (path: string): Promise<boolean> => {
+  try {
+    return (await lstat(path)).isFile();
+  } catch (caughtError) {
+    if (isExpectedFsProbeError(caughtError)) {
+      return false;
+    }
+
+    throw caughtError;
+  }
+};
 
 export const ensureDir = async (path: string): Promise<void> => {
   await mkdir(path, { recursive: true });

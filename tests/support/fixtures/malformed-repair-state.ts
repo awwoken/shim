@@ -12,11 +12,15 @@ type MutableRegistryTool = {
 
 type MutableRegistry = {
   tools: Record<string, MutableRegistryTool>;
+  bins: Record<string, unknown>;
 } & Record<string, unknown>;
 
 type MutableShimMetadata = {
   bins: Record<string, unknown>;
 } & Record<string, unknown>;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const readMutableRegistryTool = async (
   home: TestHome,
@@ -37,17 +41,62 @@ const readMutableMetadata = async (
 ): Promise<MutableShimMetadata> =>
   await readJsonFile<MutableShimMetadata>(metadataPath);
 
+const expectMutableRegistryBin = (
+  registry: MutableRegistry,
+  binName: string,
+): Record<string, unknown> => {
+  const registryBin = registry.bins[binName];
+
+  if (!isRecord(registryBin)) {
+    throw new Error(`Expected registry bin ${binName}`);
+  }
+
+  return registryBin;
+};
+
 const expectMutableBinMetadata = (
   metadata: MutableShimMetadata,
   binName: string,
 ): Record<string, unknown> => {
   const binMetadata = metadata.bins[binName];
 
-  if (typeof binMetadata !== "object" || binMetadata === null) {
+  if (!isRecord(binMetadata)) {
     throw new Error(`Expected shim metadata for ${binName}`);
   }
 
-  return binMetadata as Record<string, unknown>;
+  return binMetadata;
+};
+
+const addRepairBin = async ({
+  home,
+  toolId,
+  sourceBinName,
+  addedBinName,
+  assignCanonicalOwner,
+}: {
+  home: TestHome;
+  toolId: string;
+  sourceBinName: string;
+  addedBinName: string;
+  assignCanonicalOwner: boolean;
+}): Promise<void> => {
+  const { registry, tool } = await readMutableRegistryTool(home, toolId);
+  const metadata = await readMutableMetadata(tool.metadataPath);
+  const sourceBinMetadata = expectMutableBinMetadata(metadata, sourceBinName);
+
+  tool.bins = [...tool.bins, addedBinName];
+  metadata.bins[addedBinName] = sourceBinMetadata;
+
+  if (assignCanonicalOwner) {
+    const sourceRegistryBin = expectMutableRegistryBin(registry, sourceBinName);
+    registry.bins[addedBinName] = {
+      ...sourceRegistryBin,
+      shimPath: addedBinName,
+    };
+  }
+
+  await writeJsonFile(home.registry, registry);
+  await writeJsonFile(tool.metadataPath, metadata);
 };
 
 export const addTraversalRepairBin = async ({
@@ -61,15 +110,33 @@ export const addTraversalRepairBin = async ({
   sourceBinName: string;
   traversalBinName: string;
 }): Promise<void> => {
-  const { registry, tool } = await readMutableRegistryTool(home, toolId);
-  const metadata = await readMutableMetadata(tool.metadataPath);
-  const sourceBinMetadata = expectMutableBinMetadata(metadata, sourceBinName);
+  await addRepairBin({
+    home,
+    toolId,
+    sourceBinName,
+    addedBinName: traversalBinName,
+    assignCanonicalOwner: true,
+  });
+};
 
-  tool.bins = [...tool.bins, traversalBinName];
-  metadata.bins[traversalBinName] = sourceBinMetadata;
-
-  await writeJsonFile(home.registry, registry);
-  await writeJsonFile(tool.metadataPath, metadata);
+export const addUnownedRepairBin = async ({
+  home,
+  toolId,
+  sourceBinName,
+  unownedBinName,
+}: {
+  home: TestHome;
+  toolId: string;
+  sourceBinName: string;
+  unownedBinName: string;
+}): Promise<void> => {
+  await addRepairBin({
+    home,
+    toolId,
+    sourceBinName,
+    addedBinName: unownedBinName,
+    assignCanonicalOwner: false,
+  });
 };
 
 export const setRegistryToolPath = async ({

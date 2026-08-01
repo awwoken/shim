@@ -130,11 +130,7 @@ const resolveMetadataPath = (
   const resolvedPath = resolve(toolPath, metadataPath);
   const realPathInside = existingRealPathIsInsideRoot(toolPath, resolvedPath);
 
-  if (realPathInside !== undefined) {
-    return realPathInside ? resolvedPath : undefined;
-  }
-
-  return pathIsInsideRoot(toolPath, resolvedPath) ? resolvedPath : undefined;
+  return realPathInside === true ? resolvedPath : undefined;
 };
 
 export const renderExpectedNpmShimContent = ({

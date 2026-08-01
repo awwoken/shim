@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import type { ShimDoctor, ToolDoctor } from "@/core/doctor";
 import { npmBinPath } from "@/runtimes/node";
-import { assertDirectory, pathExists } from "@/support/fs";
+import { assertDirectory, isRegularFile, pathExists } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 
 import {
@@ -104,6 +104,16 @@ export const checkNpmShim: ShimDoctor = async ({
       level: "error",
       message: `Shim metadata has supported and safe entry for ${binName}`,
       hint: "Reinstall the tool to regenerate shim metadata.",
+    });
+
+    return;
+  }
+
+  if (!(await isRegularFile(shimPath))) {
+    checks.push({
+      level: "error",
+      message: `Shim is a regular file ${shimPath}`,
+      hint: "Reinstall the tool to replace the shim with a regular file.",
     });
 
     return;
