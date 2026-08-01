@@ -34,7 +34,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const metadataBinsRecord = (
   metadata: ShimMetadata,
 ): Record<string, unknown> | undefined => {
-  const { bins } = metadata as { bins?: unknown };
+  if (!isRecord(metadata)) {
+    return undefined;
+  }
+
+  const { bins } = metadata;
 
   return isRecord(bins) ? bins : undefined;
 };
@@ -85,6 +89,21 @@ const resolveMetadataToolPath = (
   }
 };
 
+const resolveMetadataNodePath = (
+  paths: ShimPaths,
+  tool: RegistryTool,
+): string | undefined => {
+  try {
+    return nodeBinPath(paths, tool.runtime.version);
+  } catch (caughtError) {
+    if (caughtError instanceof AppError) {
+      return undefined;
+    }
+
+    throw caughtError;
+  }
+};
+
 const resolveMetadataPath = (
   paths: ShimPaths,
   toolPath: string,
@@ -119,6 +138,7 @@ export const renderExpectedNpmShimContent = ({
   }
 
   const toolPath = resolveMetadataToolPath(paths, tool);
+  const nodePath = resolveMetadataNodePath(paths, tool);
   const sourceBinPath =
     toolPath === undefined
       ? undefined
@@ -130,6 +150,7 @@ export const renderExpectedNpmShimContent = ({
 
   if (
     toolPath === undefined ||
+    nodePath === undefined ||
     sourceBinPath === undefined ||
     (binMetadata.target !== undefined && targetPath === undefined)
   ) {
@@ -140,7 +161,7 @@ export const renderExpectedNpmShimContent = ({
     type: binMetadata.type,
     sourceBinPath,
     targetPath,
-    nodePath: nodeBinPath(paths, tool.runtime.version),
+    nodePath,
     nodeModulesPath: npmExposedNodeModulesPath(paths),
   });
 };

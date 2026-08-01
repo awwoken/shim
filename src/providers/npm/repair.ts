@@ -10,6 +10,7 @@ import {
 } from "@/support/fs";
 import { isExpectedFsProbeError } from "@/support/fs/errors";
 
+import { hasPathAncestorInsideRoot } from "./path-safety";
 import {
   hasNpmShimMetadataBins,
   isSafeNpmBinName,
@@ -48,6 +49,13 @@ export const repairNpmShim: ShimRepairer = async ({
     return skipped(
       `Skipped ${binName}; registry records an unsafe shim name`,
       "Reinstall the tool or remove stale registry state.",
+    );
+  }
+
+  if (!hasPathAncestorInsideRoot(paths.home, paths.bin)) {
+    return skipped(
+      `Skipped ${binName}; shim bin directory has an unsafe filesystem ancestor`,
+      "Replace the bin directory with a directory inside the shim home.",
     );
   }
 

@@ -8,6 +8,10 @@ type MutableRegistryTool = {
   metadataPath: string;
   toolPath: string;
   bins: string[];
+  runtime: {
+    kind: string;
+    version: string;
+  };
 };
 
 type MutableRegistry = {
@@ -155,6 +159,22 @@ export const removeRegistryToolBin = async ({
   await writeJsonFile(home.registry, registry);
 };
 
+export const setRegistryToolRuntimeVersion = async ({
+  home,
+  toolId,
+  version,
+}: {
+  home: TestHome;
+  toolId: string;
+  version: string;
+}): Promise<void> => {
+  const { registry, tool } = await readMutableRegistryTool(home, toolId);
+
+  tool.runtime.version = version;
+
+  await writeJsonFile(home.registry, registry);
+};
+
 export const setRegistryToolPath = async ({
   home,
   toolId,
@@ -184,6 +204,20 @@ export const setShimMetadataBins = async ({
   const metadata = await readMutableMetadata(tool.metadataPath);
 
   await writeJsonFile(tool.metadataPath, { ...metadata, bins });
+};
+
+export const writeShimMetadataValue = async ({
+  home,
+  toolId,
+  value,
+}: {
+  home: TestHome;
+  toolId: string;
+  value: unknown;
+}): Promise<void> => {
+  const { tool } = await readMutableRegistryTool(home, toolId);
+
+  await writeJsonFile(tool.metadataPath, value);
 };
 
 export const writeInvalidShimMetadataJson = async ({
